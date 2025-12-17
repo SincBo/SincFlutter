@@ -5,6 +5,7 @@ import '../models/creator_model.dart';
 import '../models/message_model.dart';
 import '../models/chat_con_creador_model.dart';
 import '../utils/safe_map.dart';
+import 'dart:convert';
 
 class SupabaseDataSource {
   final SupabaseClient client;
@@ -341,6 +342,101 @@ class SupabaseDataSource {
       debugPrint('insertarMensaje -> error: $e');
       return null;
     }
+  }
+
+  Future<dynamic> generateQr({
+    required double amount,
+    required String gloss,
+    String? additionalData,
+    required String destinationAccountId,
+    String? callbackUrl,
+  }) async {
+    // Build payload according to VPay documentation
+    final expirationDate = DateTime.now().add(const Duration(days: 1)).toIso8601String().split('T').first; // yyyy-MM-dd
+    final transactionIdentifier = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final header = [
+      {'attribute': 'currency', 'value': 'BOB'},
+      {'attribute': 'gloss', 'value': gloss},
+      {'attribute': 'amount', 'value': amount.toString()},
+      {'attribute': 'expirationDate', 'value': expirationDate},
+      {'attribute': 'additionalData', 'value': additionalData ?? gloss},
+      {'attribute': 'destinationAccountId', 'value': destinationAccountId},
+      {'attribute': 'transactionIdentifier', 'value': transactionIdentifier},
+      {'attribute': 'user', 'value': 'app'},
+      {'attribute': 'company', 'value': '1'},
+      {'attribute': 'originCollection', 'value': 'PWEB/APPM'},
+      if (callbackUrl != null) {'attribute': 'callback', 'value': callbackUrl},
+    ];
+
+    final detail = [
+      {
+        'items': [
+          {'attribute': 'ITEM1', 'value': '1'},
+        ]
+      }
+    ];
+
+    final payload = {
+      'operation': 'VTO041',
+      'header': header,
+      'detail': detail,
+    };
+
+    try {
+      debugPrint('generateQr -> calling vpay-generate-qr with payload: $payload');
+      final response = await client.functions.invoke('vpay-generate-qr', body: payload);
+
+      // Try to get a usable payload (many clients return `response.data`)
+      dynamic data;
+      try {
+        data = response.data;
+      } catch (_) {
+        data = response;
+      }
+
+      debugPrint('generateQr -> raw response data: $data');
+
+      // Parse according to documentation: responseList -> response[] with code 'QR' and identificator base64
+      if (data is Map && data.containsKey('responseList')) {
+        try {
+          final rl = data['responseList'];
+          if (rl is List) {
+            for (final entry in rl) {
+              if (entry is Map && entry.containsKey('response')) {
+                final responses = entry['response'];
+                if (responses is List) {
+                  for (final r in responses) {
+                    if (r is Map && r['code'] == 'QR' && r.containsKey('identificator')) {
+                      final base64str = r['identificator'] as String;
+                      // Return a data URI so UI can parse it easily
+                      final dataUri = 'data:image/png;base64,$base64str';
+                      debugPrint('generateQr -> extracted QR data URI');
+                      return dataUri;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('generateQr -> parsing response failed: $e');
+          // fallthrough to return raw data
+        }
+      }
+
+      // If we couldn't extract the QR, return the raw data for inspection
+      return data;
+    } catch (e) {
+    }
+
+    // All attempts failed; return structured information for debugging
+    return {
+      'ok': false,
+      'error': 'All attempts failed',
+      'attempts': errors,
+      'bodies': attempts.map((a) => {a['label'] as String: a['body']}).toList(),
+    };
   }
 
 }

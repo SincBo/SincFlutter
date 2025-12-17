@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/creator.dart';
 import '../../providers/providers.dart';
-import 'chat_page.dart';
+import 'payment_confirmation_page.dart';
 
 class CreatorWallPage extends StatefulWidget {
   final CreatorEntity creator;
@@ -390,7 +390,17 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    final amount = price.contains('bs') ? price : '$price bs';
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PaymentConfirmationPage(
+                        recipient: widget.creator.nombreUsuario,
+                        amount: amount,
+                        concept: title,
+                        destinationAccountId: widget.creator.idUsuario,
+                      ),
+                    ));
+                  },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
