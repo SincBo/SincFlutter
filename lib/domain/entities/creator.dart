@@ -7,6 +7,7 @@ class CreatorEntity {
   final double precioSuscripcionFellow;
   final String? categoria;
   final List<dynamic>? publicaciones;
+  final List<dynamic>? planes; // Nuevo: lista de planes (Comunidad/Fellow)
 
   CreatorEntity({
     required this.idUsuario,
@@ -17,6 +18,7 @@ class CreatorEntity {
     required this.precioSuscripcionFellow,
     this.categoria,
     this.publicaciones,
+    this.planes,
   });
 
   /// Convert the entity to a Map using the same keys as CreatorModel.toMap
@@ -30,6 +32,7 @@ class CreatorEntity {
       'precio_suscripcion_fellow': precioSuscripcionFellow,
       'categoria': categoria,
       'publicaciones': publicaciones,
+      'planes': planes,
     };
   }
 }

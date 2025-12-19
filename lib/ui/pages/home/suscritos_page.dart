@@ -1,50 +1,77 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/search_bar.dart';
+import '../../../providers/providers.dart';
+import '../../../data/models/creator_por_tipo_model.dart';
 
-class SuscritosPage extends StatefulWidget {
+class SuscritosPage extends ConsumerStatefulWidget {
   const SuscritosPage({Key? key}) : super(key: key);
 
   @override
-  State<SuscritosPage> createState() => _SuscritosPageState();
+  ConsumerState<SuscritosPage> createState() => _SuscritosPageState();
 }
 
-class _SuscritosPageState extends State<SuscritosPage> {
-  final List<Map<String, String>> _all = List.generate(25, (i) => {
-    'title': 'Creador ${i + 1}',
-    'subtitle': 'Descripción breve o última publicación del creador ${i + 1}',
-  });
-
-  List<Map<String, String>> _filtered = [];
+class _SuscritosPageState extends ConsumerState<SuscritosPage> {
+  // Datos reales desde Supabase (tipo comunidad)
+  final List<CreatorPorTipoModel> _data = [];
+  // Lista filtrada para mostrar según búsqueda
+  List<CreatorPorTipoModel> _filtered = [];
   String _query = '';
+  bool _isLoading = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _filtered = List.from(_all);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final ds = ref.read(supabaseDataSourceProvider);
+      final results = await ds.obtenerCreadoresPorTipo('comunidad', limit: 100, offset: 0);
+      setState(() {
+        _data
+          ..clear()
+          ..addAll(results);
+        _applyFilter();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _applyFilter() {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) {
+      _filtered = List.from(_data);
+    } else {
+      _filtered = _data.where((c) {
+        final nombre = c.nombreCreador.toLowerCase();
+        final bio = c.bio.toLowerCase();
+        final tipo = c.tipoPlan.toLowerCase();
+        return nombre.contains(q) || bio.contains(q) || tipo.contains(q);
+      }).toList();
+    }
   }
 
   void _onSearchChanged(String val) {
     setState(() {
-      _query = val.trim();
-      if (_query.isEmpty) {
-        _filtered = List.from(_all);
-      } else {
-        final lower = _query.toLowerCase();
-        _filtered = _all.where((m) {
-          final t = (m['title'] ?? '').toLowerCase();
-          final s = (m['subtitle'] ?? '').toLowerCase();
-          return t.contains(lower) || s.contains(lower);
-        }).toList();
-      }
+      _query = val;
+      _applyFilter();
     });
   }
 
   Future<void> _refresh() async {
-    await Future.delayed(const Duration(milliseconds: 600));
-    setState(() {
-      _filtered = List.from(_all);
-      _query = '';
-    });
+    await _load();
   }
 
   @override
@@ -78,13 +105,24 @@ class _SuscritosPageState extends State<SuscritosPage> {
 
             // Section 2: Search bar
             DebouncedSearchBar(
-              hintText: 'Buscar creadores suscritos',
+              hintText: 'Buscar creadores suscritos (comunidad)',
               debounceDuration: const Duration(milliseconds: 300),
               initialText: _query,
               onChanged: _onSearchChanged,
             ),
 
             const SizedBox(height: 12),
+
+            // Status row
+            if (_isLoading && _data.isEmpty) const LinearProgressIndicator(),
+            if (_error != null && _data.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Text('Error: $_error', style: const TextStyle(color: Colors.red)),
+              ),
+            Text('Tipo: comunidad — resultados: ${_filtered.length}'),
+
+            const SizedBox(height: 8),
 
             // Section 3: List with title and subtitle
             Expanded(
@@ -93,23 +131,27 @@ class _SuscritosPageState extends State<SuscritosPage> {
                 child: _filtered.isEmpty
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        children: const [
-                          SizedBox(height: 80),
-                          Center(child: Text('No hay suscripciones que coincidan')),
+                        children: [
+                          const SizedBox(height: 80),
+                          Center(
+                            child: Text(
+                              _isLoading ? 'Cargando…' : 'No hay suscripciones de comunidad',
+                            ),
+                          ),
                         ],
                       )
                     : ListView.separated(
                         itemCount: _filtered.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
-                          final item = _filtered[index];
-                          final initials = (item['title'] ?? '').trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join();
+                          final c = _filtered[index];
+                          final initials = c.nombreCreador.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join().toUpperCase();
                           return ListTile(
-                            leading: CircleAvatar(child: Text(initials.toUpperCase())),
-                            title: Text(item['title'] ?? ''),
-                            subtitle: Text(item['subtitle'] ?? ''),
+                            leading: CircleAvatar(child: Text(initials)),
+                            title: Text(c.nombreCreador),
+                            subtitle: Text('${c.tipoPlan} · Bs ${c.precioPlan.toStringAsFixed(2)}'),
                             onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abrir ${item['title']}')));
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abrir ${c.nombreCreador}')));
                             },
                           );
                         },

@@ -97,4 +97,14 @@ class CreatorRepositoryImpl implements CreatorRepository {
       return [];
     }
   }
+
+  @override
+  Future<String?> createTransaction({required String creatorId, required String planId, required double price}) async {
+    try {
+      return await datasource.createTransaction(creatorId: creatorId, planId: planId, price: price);
+    } catch (e) {
+      debugPrint('CreatorRepositoryImpl.createTransaction -> error: $e');
+      return null;
+    }
+  }
 }

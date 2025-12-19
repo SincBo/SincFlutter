@@ -24,4 +24,7 @@ abstract class CreatorRepository {
 
   /// Obtiene los chats suscritos para el usuario autenticado.
   Future<List<ChatConCreadorEntity>> obtenerChatsSuscritos();
+
+  /// Crea una transacción de suscripción/compra y devuelve el id de la transacción.
+  Future<String?> createTransaction({required String creatorId, required String planId, required double price});
 }

@@ -1,9 +1,10 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import '../models/creator_model.dart';
 import '../models/message_model.dart';
 import '../models/chat_con_creador_model.dart';
+import '../models/creator_por_tipo_model.dart';
 import '../utils/safe_map.dart';
 import 'dart:convert';
 
@@ -49,7 +50,6 @@ class SupabaseDataSource {
   /// Returns a list of CreatorModel with optional limit and offset (range).
   Future<List<CreatorModel>> buscarCreadores(String query, {int limit = 50, int offset = 0}) async {
     try {
-      debugPrint('buscarCreadores -> query: "$query", limit: $limit, offset: $offset');
       // If the query is empty, return a first page from the 'creadores' table.
       if (query.trim().isEmpty) {
         final res = await client.from('creadores').select().limit(limit).range(offset, offset + limit - 1);
@@ -64,16 +64,13 @@ class SupabaseDataSource {
           return CreatorModel.fromMap(map);
         }).toList();
         if (result.isEmpty) {
-          debugPrint('buscarCreadores -> empty result from table (empty query), attempting fallback to RPC');
           final rpcRes = await client.rpc('obtener_creadores');
           if (rpcRes is List) {
             final rpcList = rpcRes.map((e) => normalizeKeys(mapFromDynamic(e))).toList();
             final mapped = rpcList.map((m) => CreatorModel.fromMap(m)).toList();
-            debugPrint('buscarCreadores -> fallback returned ${mapped.length} items (RPC for empty query)');
             return mapped;
           }
         }
-        debugPrint('buscarCreadores -> returned ${result.length} items (empty query)');
         return result;
       }
 
@@ -89,7 +86,6 @@ class SupabaseDataSource {
         list = <dynamic>[];
       }
       if (list.isEmpty) {
-        debugPrint('buscarCreadores -> raw is null or empty from table (query: "$query"). Attempting fallback to RPC obtener_creadores');
         final rpcRes = await client.rpc('obtener_creadores');
         if (rpcRes is List) {
           final rpcList = rpcRes.map((e) => normalizeKeys(mapFromDynamic(e))).toList();
@@ -100,7 +96,6 @@ class SupabaseDataSource {
             return nombre.contains(query.toLowerCase()) || categoria.contains(query.toLowerCase());
           }).skip(offset).take(limit).toList();
           final mapped = filtered.map((m) => CreatorModel.fromMap(m)).toList();
-          debugPrint('buscarCreadores -> fallback returned ${mapped.length} items (RPC)');
           return mapped;
         }
         return [];
@@ -109,10 +104,8 @@ class SupabaseDataSource {
         final map = normalizeKeys(mapFromDynamic(e));
         return CreatorModel.fromMap(map);
       }).toList();
-      debugPrint('buscarCreadores -> returned ${result.length} items (query)');
       return result;
     } catch (e) {
-      debugPrint('buscarCreadores -> error: $e');
       // On unexpected shapes or errors, return empty list and allow upper layers to handle/log if needed.
       return [];
     }
@@ -125,7 +118,6 @@ class SupabaseDataSource {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
-        debugPrint('estaSuscrito -> usuario no autenticado');
         return false;
       }
 
@@ -165,7 +157,6 @@ class SupabaseDataSource {
 
       return false;
     } catch (e) {
-      debugPrint('estaSuscrito -> error: $e');
       return false;
     }
   }
@@ -177,7 +168,6 @@ class SupabaseDataSource {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
-        debugPrint('crearChatYParticipantes -> usuario no autenticado');
         return null;
       }
 
@@ -212,11 +202,8 @@ class SupabaseDataSource {
 
       // Fallback: numeric id
       if (rpcRes is num) return rpcRes.toString();
-
-      debugPrint('crearChatYParticipantes -> unexpected rpcRes shape: $rpcRes');
       return null;
     } catch (e) {
-      debugPrint('crearChatYParticipantes -> error: $e');
       return null;
     }
   }
@@ -227,7 +214,6 @@ class SupabaseDataSource {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
-        debugPrint('enviarMensaje -> usuario no autenticado');
         return false;
       }
 
@@ -240,7 +226,6 @@ class SupabaseDataSource {
 
       return true;
     } catch (e) {
-      debugPrint('enviarMensaje -> error: $e');
       return false;
     }
   }
@@ -251,7 +236,6 @@ class SupabaseDataSource {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
-        debugPrint('obtenerChatsSuscritos -> usuario no autenticado');
         return [];
       }
 
@@ -277,7 +261,6 @@ class SupabaseDataSource {
 
       return [];
     } catch (e) {
-      debugPrint('obtenerChatsSuscritos -> error: $e');
       return [];
     }
   }
@@ -302,7 +285,6 @@ class SupabaseDataSource {
 
       return messages;
     } catch (e) {
-      debugPrint('obtenerMensajes -> error: $e');
       return [];
     }
   }
@@ -312,7 +294,6 @@ class SupabaseDataSource {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
-        debugPrint('insertarMensaje -> usuario no autenticado');
         return null;
       }
 
@@ -323,24 +304,22 @@ class SupabaseDataSource {
         'contenido': contenido,
       }).select();
 
-      if (res == null) return null;
-
       // Supabase typically returns a list with the inserted row
-      if (res is List && res.isNotEmpty) {
-        final map = normalizeKeys(mapFromDynamic(res.first));
+      final List<dynamic> rows = res as List<dynamic>;
+      if (rows.isNotEmpty) {
+        final map = normalizeKeys(mapFromDynamic(rows.first));
         return MessageModel.fromMap(map);
       }
 
-      if (res is Map) {
-        final map = normalizeKeys(mapFromDynamic(res));
-        return MessageModel.fromMap(map);
-      }
-
-      debugPrint('insertarMensaje -> unexpected response shape: $res');
       return null;
     } catch (e) {
-      debugPrint('insertarMensaje -> error: $e');
-      return null;
+      // Fallback: in case the SDK returns a Map instead of List in some versions
+      try {
+        final map = normalizeKeys(mapFromDynamic(e));
+        return MessageModel.fromMap(map);
+      } catch (_) {
+        return null;
+      }
     }
   }
 
@@ -350,10 +329,20 @@ class SupabaseDataSource {
     String? additionalData,
     required String destinationAccountId,
     String? callbackUrl,
+    String? transactionIdentifier,
   }) async {
+    // If destinationAccountId looks like an internal UUID, the VPay API might expect a different account code.
+    var destForVpay = destinationAccountId;
+    final uuidLike = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-');
+    if (uuidLike.hasMatch(destinationAccountId)) {
+      debugPrint('generateQr -> destinationAccountId looks like a UUID ($destinationAccountId). Using fallback VPay account id "3332CO" for the request.');
+      destForVpay = '3332CO';
+    }
+
     // Build payload according to VPay documentation
     final expirationDate = DateTime.now().add(const Duration(days: 1)).toIso8601String().split('T').first; // yyyy-MM-dd
-    final transactionIdentifier = DateTime.now().millisecondsSinceEpoch.toString();
+    final generatedTxId = DateTime.now().millisecondsSinceEpoch.toString();
+    final txId = (transactionIdentifier != null && transactionIdentifier.isNotEmpty) ? transactionIdentifier : generatedTxId;
 
     final header = [
       {'attribute': 'currency', 'value': 'BOB'},
@@ -361,18 +350,20 @@ class SupabaseDataSource {
       {'attribute': 'amount', 'value': amount.toString()},
       {'attribute': 'expirationDate', 'value': expirationDate},
       {'attribute': 'additionalData', 'value': additionalData ?? gloss},
-      {'attribute': 'destinationAccountId', 'value': destinationAccountId},
-      {'attribute': 'transactionIdentifier', 'value': transactionIdentifier},
-      {'attribute': 'user', 'value': 'app'},
-      {'attribute': 'company', 'value': '1'},
+      {'attribute': 'destinationAccountId', 'value': destForVpay},
+      {'attribute': 'transactionIdentifier', 'value': txId},
+      // Use the documented example user; adjust if your integrator requires a different user
+      {'attribute': 'user', 'value': 'testVpay'},
+      {'attribute': 'company', 'value': '303'},
       {'attribute': 'originCollection', 'value': 'PWEB/APPM'},
       if (callbackUrl != null) {'attribute': 'callback', 'value': callbackUrl},
     ];
 
+    // Detail items: include at least one item as required by the spec
     final detail = [
       {
         'items': [
-          {'attribute': 'ITEM1', 'value': '1'},
+          {'attribute': 'YGN-RUTA1', 'value': '2'},
         ]
       }
     ];
@@ -384,10 +375,147 @@ class SupabaseDataSource {
     };
 
     try {
-      debugPrint('generateQr -> calling vpay-generate-qr with payload: $payload');
-      final response = await client.functions.invoke('vpay-generate-qr', body: payload);
+      // Debug: show JSON-encoded payload to ensure formatting is correct
+      debugPrint('generateQr -> calling vpay-generate-qr with payload (Map): $payload');
+      dynamic response;
+      try {
+        response = await client.functions.invoke('vpay-generate-qr', body: payload);
+      } catch (e) {
+        debugPrint('generateQr -> first invoke error: $e');
+        final errStr = e.toString();
+        // If server reports missing fields, retry sending JSON string with explicit header
+        if (errStr.toLowerCase().contains('campos requeridos') || errStr.toLowerCase().contains('falt') || errStr.toLowerCase().contains('required') || errStr.toLowerCase().contains('400')) {
+          try {
+            debugPrint('generateQr -> retrying invoke with JSON-encoded body');
+            response = await client.functions.invoke('vpay-generate-qr', body: jsonEncode(payload), headers: {'Content-Type': 'application/json'});
+          } catch (e2) {
+            debugPrint('generateQr -> second invoke error: $e2');
+            // Try a final attempt switching to operation VTO041 which some environments expect
+            try {
+              debugPrint('generateQr -> retrying with operation VTO041 as fallback');
+              final payloadVTO041 = Map<String, dynamic>.from(payload);
+              payloadVTO041['operation'] = 'VTO041';
+              response = await client.functions.invoke('vpay-generate-qr', body: jsonEncode(payloadVTO041), headers: {'Content-Type': 'application/json'});
+            } catch (e3) {
+              debugPrint('generateQr -> third invoke error (VTO041): $e3');
+              return {'ok': false, 'error': e3.toString(), 'payload': payload, 'destUsed': destForVpay};
+            }
+          }
+        } else {
+          return {'ok': false, 'error': errStr, 'payload': payload, 'destUsed': destForVpay};
+        }
+      }
 
-      // Try to get a usable payload (many clients return `response.data`)
+       // Extract response data if available
+       dynamic data;
+       try {
+         data = response.data;
+       } catch (_) {
+         data = response;
+       }
+
+      debugPrint('generateQr -> raw response data: $data');
+
+      // If response indicates missing fields despite no thrown exception, attempt fallback op
+      if (data is Map) {
+        final low = data.toString().toLowerCase();
+        if (low.contains('campos requeridos') || low.contains('falt') || low.contains('400') || low.contains('required')) {
+          debugPrint('generateQr -> response contains missing-fields indication, retrying with VTO041');
+          try {
+            final payloadVTO041 = Map<String, dynamic>.from(payload);
+            payloadVTO041['operation'] = 'VTO041';
+            final retryResp = await client.functions.invoke('vpay-generate-qr', body: jsonEncode(payloadVTO041), headers: {'Content-Type': 'application/json'});
+            try {
+              final retryData = retryResp.data ?? retryResp;
+              debugPrint('generateQr -> retry with VTO041 returned: $retryData');
+              data = retryData;
+            } catch (_) {}
+          } catch (e) {
+            debugPrint('generateQr -> retry with VTO041 failed: $e');
+            // continue to parsing original data (which likely is an error map)
+          }
+        }
+      }
+
+      // Parse according to documentation: responseList -> response[] with code 'QR' and identificator base64
+      if (data is Map && data.containsKey('responseList')) {
+        try {
+          final rl = data['responseList'];
+          if (rl is List) {
+            String? qrIdent;
+            String? idIdent;
+             for (final entry in rl) {
+               if (entry is Map && entry.containsKey('response')) {
+                 final responses = entry['response'];
+                 if (responses is List) {
+                   for (final r in responses) {
+                     if (r is Map) {
+                      final code = (r['code']?.toString() ?? '').toUpperCase();
+                      final identificator = r['identificator'];
+                      if (identificator is String) {
+                        if (code == 'QR') {
+                          qrIdent = identificator;
+                        } else if (code == 'IDQR' || code == 'ID_QR' || code == 'IDQR') {
+                          idIdent = identificator;
+                        } else {
+                          // Some providers may use other codes; try to heuristically detect base64 vs id
+                          final candidate = identificator.trim();
+                          if (candidate.length > 100) {
+                            // likely the base64 image
+                            qrIdent = candidate;
+                          } else if (RegExp(r'^\d+\x00?\x00?\x00?\x00?\x00?\x00?\x00?\x00?\x00?\x00?').hasMatch(candidate) || RegExp(r'^\d{3,}$').hasMatch(candidate)) {
+                            idIdent = candidate;
+                          }
+                        }
+                      }
+                     }
+                   }
+                 }
+               }
+             }
+
+            // Prefer returning the QR image if found; otherwise return id if present
+            if (qrIdent != null && qrIdent.isNotEmpty) {
+              final dataUri = 'data:image/png;base64,$qrIdent';
+              debugPrint('generateQr -> extracted QR data URI (post-collect)');
+              return dataUri;
+            }
+            if (idIdent != null && idIdent.isNotEmpty) {
+              return idIdent;
+            }
+           }
+         } catch (e) {
+           debugPrint('generateQr -> parsing responseList failed: $e');
+         }
+       }
+
+      // If we couldn't extract the QR image, return the raw data for inspection
+      return data;
+    } catch (e) {
+      debugPrint('generateQr -> error calling vpay-generate-qr: $e');
+      return {'ok': false, 'error': e.toString(), 'payload': payload, 'destUsed': destForVpay};
+    }
+  }
+
+  // Fetch QR by identifier using an edge function or equivalent server-side helper.
+  // Returns a data-uri string (data:image/png;base64,...) when possible, otherwise returns raw response.
+  Future<dynamic> getQrById(String id) async {
+    final payload = {'id': id};
+    try {
+      debugPrint('getQrById -> invoking vpay-get-qr with id=$id');
+      dynamic response;
+      try {
+        response = await client.functions.invoke('vpay-get-qr', body: payload);
+      } catch (e) {
+        debugPrint('getQrById -> first invoke error: $e');
+        try {
+          response = await client.functions.invoke('vpay-get-qr', body: jsonEncode(payload), headers: {'Content-Type': 'application/json'});
+        } catch (e2) {
+          debugPrint('getQrById -> second invoke error: $e2');
+          return {'ok': false, 'error': e2.toString(), 'id': id};
+        }
+      }
+
       dynamic data;
       try {
         data = response.data;
@@ -395,48 +523,210 @@ class SupabaseDataSource {
         data = response;
       }
 
-      debugPrint('generateQr -> raw response data: $data');
+      debugPrint('getQrById -> raw response data: $data');
 
-      // Parse according to documentation: responseList -> response[] with code 'QR' and identificator base64
+      // Try to extract QR similar to generateQr parsing
       if (data is Map && data.containsKey('responseList')) {
         try {
           final rl = data['responseList'];
           if (rl is List) {
+            String? qrIdent;
+            String? idIdent;
             for (final entry in rl) {
               if (entry is Map && entry.containsKey('response')) {
                 final responses = entry['response'];
                 if (responses is List) {
                   for (final r in responses) {
-                    if (r is Map && r['code'] == 'QR' && r.containsKey('identificator')) {
-                      final base64str = r['identificator'] as String;
-                      // Return a data URI so UI can parse it easily
-                      final dataUri = 'data:image/png;base64,$base64str';
-                      debugPrint('generateQr -> extracted QR data URI');
-                      return dataUri;
+                    if (r is Map) {
+                      final code = (r['code']?.toString() ?? '').toUpperCase();
+                      final identificator = r['identificator'];
+                      if (identificator is String) {
+                        final candidate = identificator.trim();
+                        if (code == 'QR' || candidate.length > 100) {
+                          qrIdent = candidate;
+                        } else if (RegExp(r'^\d{3,}\x00?').hasMatch(candidate)) {
+                          idIdent = candidate;
+                        }
+                      }
                     }
                   }
                 }
               }
             }
+
+            if (qrIdent != null && qrIdent.isNotEmpty) {
+              final dataUri = 'data:image/png;base64,$qrIdent';
+              debugPrint('getQrById -> extracted QR data URI');
+              return dataUri;
+            }
+            if (idIdent != null && idIdent.isNotEmpty) return idIdent;
           }
         } catch (e) {
-          debugPrint('generateQr -> parsing response failed: $e');
-          // fallthrough to return raw data
+          debugPrint('getQrById -> parsing failed: $e');
         }
       }
 
-      // If we couldn't extract the QR, return the raw data for inspection
       return data;
     } catch (e) {
+      debugPrint('getQrById -> error: $e');
+      return {'ok': false, 'error': e.toString(), 'id': id};
     }
-
-    // All attempts failed; return structured information for debugging
-    return {
-      'ok': false,
-      'error': 'All attempts failed',
-      'attempts': errors,
-      'bodies': attempts.map((a) => {a['label'] as String: a['body']}).toList(),
-    };
   }
 
+  /// Obtener creadores por tipo de plan (e.g., "Comunidad", "Fellow")
+  /// Intenta primero con la tabla `creadores_por_tipo` y si no existe o falla,
+  /// usa el RPC `obtener_creadores_por_tipo(p_tipo)`.
+  Future<List<CreatorPorTipoModel>> obtenerCreadoresPorTipo(String tipoPlan, {int limit = 50, int offset = 0}) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        return [];
+      }
+
+      // Normalize tipoPlan to expected format if needed (e.g., lowercase)
+      final tipo = tipoPlan.trim();
+
+      final rpcRes = await client.rpc('get_creadores_por_tipo', params: {
+        'p_user_id': user.id,
+        'p_tipo': tipo,
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+
+      if (rpcRes == null) return [];
+
+      if (rpcRes is List) {
+        return rpcRes.map((e) {
+          final map = normalizeKeys(mapFromDynamic(e));
+          return CreatorPorTipoModel.fromMap(map);
+        }).toList();
+      }
+
+      if (rpcRes is Map) {
+        final map = normalizeKeys(mapFromDynamic(rpcRes));
+        return [CreatorPorTipoModel.fromMap(map)];
+      }
+
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Crea una transacción de suscripción/compra llamando al RPC `create_transaction`.
+  /// Devuelve el `id_transaccion` como String o null si falla.
+  Future<String?> createTransaction({
+    required String creatorId,
+    required String planId,
+    required double price,
+  }) async {
+    // Helper to parse id_transaccion from various shapes
+    String? _parseId(dynamic res) {
+      if (res == null) return null;
+      if (res is String && res.isNotEmpty) return res;
+      if (res is num) return res.toString();
+      if (res is List && res.isNotEmpty) return _parseId(res.first);
+      if (res is Map) {
+        final candidates = [
+          res['id_transaccion'],
+          res['idTransaccion'],
+          res['transaction_id'],
+          res['transactionId'],
+        ];
+        for (final c in candidates) {
+          final parsed = _parseId(c);
+          if (parsed != null) return parsed;
+        }
+        // Fallback: any string/num value
+        for (final v in res.values) {
+          final parsed = _parseId(v);
+          if (parsed != null) return parsed;
+        }
+      }
+      return null;
+    }
+
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        debugPrint('createTransaction -> no authenticated user');
+        return null;
+      }
+
+      // Normalize possible plan type label
+      final lowerPlan = planId.toLowerCase();
+      final planTipo = lowerPlan.contains('fellow')
+          ? 'Fellow'
+          : (lowerPlan.contains('comunidad') ? 'Comunidad' : planId);
+
+      // Attempt 1: as initially designed (with p_id_usuario)
+      final attempt1 = {
+        'p_id_creador': creatorId,
+        'p_id_plan': planId,
+        'p_monto': price,
+        // 'p_id_usuario': user.id,
+      };
+      try {
+        debugPrint('createTransaction -> attempt1 params=$attempt1');
+        final res = await client.rpc('create_transaction', params: attempt1);
+        final id = _parseId(res);
+        if (id != null) return id;
+      } catch (e) {
+        debugPrint('createTransaction -> attempt1 error: $e');
+      }
+
+      // Attempt 2: without p_id_usuario (if RPC doesn't accept it)
+      final attempt2 = {
+        'p_id_creador': creatorId,
+        'p_id_plan': planId,
+        'p_monto': price,
+      };
+      try {
+        debugPrint('createTransaction -> attempt2 params=$attempt2');
+        final res = await client.rpc('create_transaction', params: attempt2);
+        final id = _parseId(res);
+        if (id != null) return id;
+      } catch (e) {
+        debugPrint('createTransaction -> attempt2 error: $e');
+      }
+
+      // Attempt 3: using p_tipo when backend expects a plan type instead of id
+      final attempt3 = {
+        'p_id_creador': creatorId,
+        'p_tipo': planTipo, // e.g., 'Comunidad' or 'Fellow'
+        'p_monto': price,
+        // 'p_id_usuario': user.id,
+      };
+      try {
+        debugPrint('createTransaction -> attempt3 params=$attempt3');
+        final res = await client.rpc('create_transaction', params: attempt3);
+        final id = _parseId(res);
+        if (id != null) return id;
+      } catch (e) {
+        debugPrint('createTransaction -> attempt3 error: $e');
+      }
+
+      // Attempt 4: p_tipo without p_id_usuario
+      final attempt4 = {
+        'p_id_creador': creatorId,
+        'p_tipo': planTipo,
+        'p_monto': price,
+      };
+      try {
+        debugPrint('createTransaction -> attempt4 params=$attempt4');
+        final res = await client.rpc('create_transaction', params: attempt4);
+        final id = _parseId(res);
+        if (id != null) return id;
+      } catch (e) {
+        debugPrint('createTransaction -> attempt4 error: $e');
+      }
+
+      // If nothing worked, return null
+      debugPrint('createTransaction -> all attempts failed');
+      return null;
+    } catch (e) {
+      debugPrint('createTransaction -> unexpected error: $e');
+      return null;
+    }
+  }
 }

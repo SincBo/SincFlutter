@@ -10,6 +10,7 @@ class CreatorModel extends CreatorEntity {
     required double precioSuscripcionFellow,
     String? categoria,
     List<dynamic>? publicaciones,
+    List<dynamic>? planes,
   }) : super(
           idUsuario: idUsuario,
           nombreUsuario: nombreUsuario,
@@ -19,9 +20,27 @@ class CreatorModel extends CreatorEntity {
           precioSuscripcionFellow: precioSuscripcionFellow,
           categoria: categoria,
           publicaciones: publicaciones,
+          planes: planes,
         );
 
   factory CreatorModel.fromMap(Map<String, dynamic> map) {
+    // Parse planes array robustly
+    List<dynamic>? planes;
+    final rawPlanes = map['planes'];
+    if (rawPlanes is List) {
+      planes = rawPlanes.map((p) {
+        if (p is Map) {
+          return {
+            'id_plan': p['id_plan'] ?? p['idPlan'] ?? '',
+            'nombre': p['nombre'] ?? p['name'] ?? '',
+            'descripcion': p['descripcion'] ?? p['description'] ?? '',
+            'precio': (p['precio'] is num) ? (p['precio'] as num).toDouble() : (p['price'] is num ? (p['price'] as num).toDouble() : null),
+          };
+        }
+        return p;
+      }).toList();
+    }
+
     return CreatorModel(
       idUsuario: map['id_usuario'] as String? ?? '',
       nombreUsuario: map['nombre_usuario'] as String? ?? '',
@@ -31,6 +50,7 @@ class CreatorModel extends CreatorEntity {
       precioSuscripcionFellow: (map['precio_suscripcion_fellow'] is num) ? (map['precio_suscripcion_fellow'] as num).toDouble() : 0.0,
       categoria: map['categoria'] as String?,
       publicaciones: map['publicaciones'] as List<dynamic>?,
+      planes: planes,
     );
   }
 
@@ -45,6 +65,7 @@ class CreatorModel extends CreatorEntity {
       'precio_suscripcion_fellow': precioSuscripcionFellow,
       'categoria': categoria,
       'publicaciones': publicaciones,
+      'planes': planes,
     };
   }
 }

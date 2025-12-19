@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import '../../providers/providers.dart';
 
 /// Página de confirmación de pago.
@@ -23,7 +24,7 @@ class PaymentConfirmationPage extends ConsumerWidget {
   const PaymentConfirmationPage({
     Key? key,
     this.recipient = 'pablo',
-    this.amount = '50 bs',
+    this.amount = '50',
     this.concept = 'suscripción/solicitud',
     this.destinationAccountId = '3332CO',
     this.additionalData,
@@ -38,14 +39,34 @@ class PaymentConfirmationPage extends ConsumerWidget {
     final parsedAmount = double.tryParse(amount.replaceAll(RegExp('[^0-9.]'), '')) ?? 0.0;
     // Do not call the Edge function if the amount is invalid (<= 0).
     AsyncValue<dynamic>? qrAsync;
+
+    // Build a stable provider parameter (JSON string) so Riverpod doesn't recreate
+    // the family provider on every build due to List identity differences.
+    final providerParam = jsonEncode([
+      parsedAmount,
+      concept,
+      destinationAccountId,
+      additionalData ?? 'Pago ${amount}',
+      callbackUrl,
+    ]);
+
     if (parsedAmount > 0) {
-      qrAsync = ref.watch(_generateQrFutureProvider([
-        parsedAmount,
-        concept,
-        destinationAccountId,
-        additionalData ?? 'Pago ${amount}',
-        callbackUrl,
-      ]));
+      qrAsync = ref.watch(_generateQrFutureProvider(providerParam));
+
+      // Listen to provider state changes for debugging and to notify user when data arrives
+      ref.listen<AsyncValue<dynamic>>(_generateQrFutureProvider(providerParam), (prev, next) {
+        debugPrint('PaymentConfirmationPage -> _generateQrFutureProvider state changed. prev: $prev next: $next');
+        // When data arrives, show a brief message (post frame to avoid build conflicts)
+        if (next is AsyncData) {
+          debugPrint('PaymentConfirmationPage -> QR data arrived: ${next.value}');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            try {
+              ScaffoldMessenger.of(context).removeCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR cargado')));
+            } catch (_) {}
+          });
+        }
+      });
     }
 
     return Scaffold(
@@ -121,7 +142,7 @@ class PaymentConfirmationPage extends ConsumerWidget {
                           height: 240,
                           padding: const EdgeInsets.all(14),
                           child: Center(
-                            child: _buildQrContent(context, theme, qrAsync, parsedAmount, amount, concept, destinationAccountId, additionalData, callbackUrl, ref),
+                            child: _buildQrContent(context, theme, qrAsync, parsedAmount, amount, concept, destinationAccountId, additionalData, callbackUrl, ref, providerParam),
                           ),
                         ),
                       ),
@@ -200,7 +221,70 @@ class PaymentConfirmationPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildQrContent(BuildContext context, ThemeData theme, AsyncValue<dynamic>? qrAsync, double parsedAmount, String amount, String concept, String destinationAccountId, String? additionalData, String? callbackUrl, WidgetRef ref) {
+  // Helper that extracts a usable QR payload (data URI, raw base64 or nested fields) from the response
+  String? _extractQrPayload(dynamic res) {
+    if (res == null) return null;
+
+    // If it's a String that contains JSON, try to decode and re-run extraction
+    if (res is String && res.isNotEmpty) {
+      final trimmed = res.trim();
+      // If it looks like JSON, try decode
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          return _extractQrPayload(decoded);
+        } catch (_) {
+          // not JSON, continue
+        }
+      }
+      return trimmed;
+    }
+
+    // If response is a List, try to inspect first elements
+    if (res is List && res.isNotEmpty) {
+      for (final item in res) {
+        final candidate = _extractQrPayload(item);
+        if (candidate != null && candidate.isNotEmpty) return candidate;
+      }
+      return null;
+    }
+
+    if (res is Map) {
+      // Direct keys
+      final keys = ['qr_url', 'qr', 'url', 'data', 'image', 'qr_image', 'identificator'];
+      for (final k in keys) {
+        if (res.containsKey(k) && res[k] is String && (res[k] as String).isNotEmpty) {
+          return (res[k] as String).trim();
+        }
+      }
+
+      // responseList per documentation
+      if (res.containsKey('responseList') && res['responseList'] is List) {
+        for (final rl in res['responseList']) {
+          if (rl is Map && rl.containsKey('response') && rl['response'] is List) {
+            for (final r in rl['response']) {
+              if (r is Map) {
+                if (r['code'] == 'QR' && r.containsKey('identificator') && r['identificator'] is String) {
+                  return (r['identificator'] as String).trim();
+                }
+                if (r.containsKey('identificator') && r['identificator'] is String) {
+                  return (r['identificator'] as String).trim();
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback: any large string value (likely base64)
+      final base64Candidate = res.values.whereType<String>().firstWhere((v) => v.trim().length > 100, orElse: () => '');
+      if (base64Candidate.isNotEmpty) return base64Candidate.trim();
+    }
+
+    return null;
+  }
+
+  Widget _buildQrContent(BuildContext context, ThemeData theme, AsyncValue<dynamic>? qrAsync, double parsedAmount, String amount, String concept, String destinationAccountId, String? additionalData, String? callbackUrl, WidgetRef ref, String providerParam) {
     // Handle null or invalid amount
     if (parsedAmount <= 0) {
       return Column(
@@ -233,7 +317,7 @@ class PaymentConfirmationPage extends ConsumerWidget {
               Text('Request body enviado:', style: theme.textTheme.bodySmall),
               SelectableText(sentBody, textAlign: TextAlign.center),
               const SizedBox(height: 8),
-              ElevatedButton(onPressed: () => ref.refresh(_generateQrFutureProvider([parsedAmount, concept, destinationAccountId, additionalData ?? 'Pago ${amount}', callbackUrl])), child: const Text('Reintentar')),
+              ElevatedButton(onPressed: () => ref.refresh(_generateQrFutureProvider(providerParam)), child: const Text('Reintentar')),
             ],
           );
         }
@@ -250,43 +334,104 @@ class PaymentConfirmationPage extends ConsumerWidget {
           );
         }
 
+        // Try to extract a payload (base64/data-uri/URL)
+        final payload = _extractQrPayload(res);
+        if (payload != null && payload.isNotEmpty) {
+          // If payload looks like a numeric identifier (e.g. '165805'), fetch the QR image by id
+          final isNumericId = RegExp(r'^\d{3,}$').hasMatch(payload);
+          if (isNumericId) {
+            // Automatically fetch the QR image by id using provider
+            final idAsync = ref.watch(_getQrByIdProvider(payload));
+            return idAsync.when<Widget>(
+              data: (fetched) {
+                final fetchedPayload = _extractQrPayload(fetched);
+                if (fetchedPayload != null && fetchedPayload.isNotEmpty) {
+                  // Render using the same logic (url / data-uri / base64)
+                  final p = fetchedPayload;
+                  if (p.startsWith('http')) return Image.network(p, width: 200, height: 200, fit: BoxFit.contain);
+                  if (p.contains('base64') && p.startsWith('data:')) {
+                    try {
+                      final bytes = Uri.parse(p).data?.contentAsBytes();
+                      if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+                    } catch (_) {}
+                  }
+                  try {
+                    final cleaned = p.replaceAll('\n', '');
+                    final bytes = base64Decode(cleaned);
+                    return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+                  } catch (_) {
+                    try {
+                      final maybeDataUri = 'data:image/png;base64,$p';
+                      final bytes = Uri.parse(maybeDataUri).data?.contentAsBytes();
+                      if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+                    } catch (_) {}
+                  }
+                }
+                // Fallback: show raw fetched content
+                return SelectableText(fetched?.toString() ?? 'Sin datos', textAlign: TextAlign.center);
+              },
+              loading: () => Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [CircularProgressIndicator(), SizedBox(height: 8), Text('Obteniendo imagen del QR...')],
+              ),
+              error: (e, st) => Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 36, color: Colors.redAccent),
+                  const SizedBox(height: 8),
+                  Text('No se pudo obtener la imagen del QR', textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    children: [
+                      ElevatedButton(onPressed: () => ref.refresh(_getQrByIdProvider(payload)), child: const Text('Reintentar')),
+                      ElevatedButton(onPressed: () async {
+                        await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('Respuesta cruda'), content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(res))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))]));
+                      }, child: const Text('Ver respuesta cruda')),
+                      ElevatedButton(onPressed: () => Clipboard.setData(ClipboardData(text: payload)).then((_) => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID copiado')))), child: const Text('Copiar ID')),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+
+           // URL
+           if (payload.startsWith('http')) {
+             return Image.network(payload, width: 200, height: 200, fit: BoxFit.contain);
+           }
+
+           // data URI
+           if (payload.contains('base64') && payload.startsWith('data:')) {
+             try {
+               final bytes = Uri.parse(payload).data?.contentAsBytes();
+               if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+             } catch (_) {}
+           }
+
+           // raw base64 -> try decode
+           try {
+             final cleaned = payload.replaceAll('\n', '');
+             final bytes = base64Decode(cleaned);
+             return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+           } catch (_) {
+             // try as data:image/png;base64,
+             try {
+               final maybeDataUri = 'data:image/png;base64,$payload';
+               final bytes = Uri.parse(maybeDataUri).data?.contentAsBytes();
+               if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+             } catch (_) {}
+           }
+         }
+
+        // String responses that didn't match above
         if (res is String) {
-          final s = res.trim();
-          if (s.startsWith('http')) {
-            return Image.network(s, width: 200, height: 200, fit: BoxFit.contain);
-          }
-          if (s.contains('base64')) {
-            try {
-              final bytes = Uri.parse(s).data?.contentAsBytes();
-              if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
-            } catch (_) {}
-          }
-          return SelectableText(s, textAlign: TextAlign.center);
+          return SelectableText(res, textAlign: TextAlign.center);
         }
 
         if (res is Map) {
-          final candidates = ['qr_url', 'qr', 'url', 'data', 'image', 'qr_image'];
-          for (final k in candidates) {
-            if (res.containsKey(k)) {
-              final v = res[k];
-              if (v is String && v.startsWith('http')) {
-                return Image.network(v, width: 200, height: 200, fit: BoxFit.contain);
-              }
-              if (v is String && v.contains('base64')) {
-                try {
-                  final bytes = Uri.parse(v).data?.contentAsBytes();
-                  if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
-                } catch (_) {}
-              }
-            }
-          }
-
-          final payload = res.values.whereType<String>().firstWhere((_) => true, orElse: () => '');
-          if (payload.isNotEmpty && payload.startsWith('http')) {
-            return Image.network(payload, width: 200, height: 200, fit: BoxFit.contain);
-          }
-
-          return Text(res.toString());
+          return SelectableText(JsonEncoder.withIndent('  ').convert(res), textAlign: TextAlign.center);
         }
 
         // Default fallback
@@ -299,7 +444,50 @@ class PaymentConfirmationPage extends ConsumerWidget {
           ],
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () {
+        // Show a spinner but also offer retry/debug buttons to avoid appearing stuck
+        final ds = ref.read(supabaseDataSourceProvider);
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            const Text('Generando QR...'),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: () => ref.refresh(_generateQrFutureProvider(providerParam)),
+                  child: const Text('Reintentar'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Direct debug call to the datasource and show the raw response
+                    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                    dynamic debugRes;
+                    try {
+                      final List<dynamic> params = List<dynamic>.from(jsonDecode(providerParam) as List);
+                      final amount = (params.isNotEmpty && (params[0] is num || params[0] is String)) ? (params[0] is String ? double.tryParse(params[0]) ?? 0.0 : (params[0] as num).toDouble()) : 0.0;
+                      final gloss = (params.length > 1 && params[1] is String) ? params[1] as String : 'Pago';
+                      final destination = (params.length > 2 && params[2] is String) ? params[2] as String : '3332CO';
+                      final additional = (params.length > 3 && params[3] is String) ? params[3] as String : null;
+                      final callback = (params.length > 4 && params[4] is String) ? params[4] as String : null;
+                      debugRes = await ds.generateQr(amount: amount, gloss: gloss, additionalData: additional, destinationAccountId: destination, callbackUrl: callback);
+                    } catch (e) {
+                      debugRes = {'ok': false, 'error': e.toString()};
+                    }
+                    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('Debug generateQr result'), content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(debugRes))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))]));
+                  },
+                  child: const Text('Debug'),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
       error: (err, st) => Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -309,31 +497,54 @@ class PaymentConfirmationPage extends ConsumerWidget {
           const SizedBox(height: 6),
           Text(err.toString(), textAlign: TextAlign.center),
           const SizedBox(height: 6),
-          ElevatedButton(onPressed: () => ref.refresh(_generateQrFutureProvider([parsedAmount, concept, destinationAccountId, additionalData ?? 'Pago ${amount}', callbackUrl])), child: const Text('Reintentar')),
+          ElevatedButton(onPressed: () => ref.refresh(_generateQrFutureProvider(providerParam)), child: const Text('Reintentar')),
         ],
       ),
     );
   }
 }
 
-// Provider to generate QR via Supabase datasource. Returns dynamic payload from the edge function.
-final _generateQrFutureProvider = FutureProvider.family<dynamic, List<dynamic>>((ref, params) async {
-  // params: [amountDouble, glossString, destinationAccountIdString, additionalData?, callbackUrl?]
+// Provider to fetch QR by identifier when generateQr returns an id (e.g. '165805')
+final _getQrByIdProvider = FutureProvider.family<dynamic, String>((ref, id) async {
   final ds = ref.read(supabaseDataSourceProvider);
-  final amount = (params.isNotEmpty && params[0] is double) ? params[0] as double : 0.0;
+  try {
+    final res = await ds.getQrById(id).timeout(const Duration(seconds: 15), onTimeout: () => {'ok': false, 'error': 'timeout', 'id': id});
+    return res;
+  } catch (e) {
+    debugPrint('_getQrByIdProvider -> error: $e');
+    throw e;
+  }
+});
+
+// Provider to generate QR via Supabase datasource. Returns dynamic payload from the edge function.
+final _generateQrFutureProvider = FutureProvider.family<dynamic, String>((ref, paramsJson) async {
+  // paramsJson is a JSON-encoded list: [amountDouble, glossString, destinationAccountIdString, additionalData?, callbackUrl?]
+  final ds = ref.read(supabaseDataSourceProvider);
+
+  final List<dynamic> params = List<dynamic>.from(jsonDecode(paramsJson) as List);
+  final amount = (params.isNotEmpty && (params[0] is num || params[0] is String)) ? (params[0] is String ? double.tryParse(params[0]) ?? 0.0 : (params[0] as num).toDouble()) : 0.0;
   final gloss = (params.length > 1 && params[1] is String) ? params[1] as String : 'Pago';
   final destination = (params.length > 2 && params[2] is String) ? params[2] as String : '3332CO';
   final additional = (params.length > 3 && params[3] is String) ? params[3] as String : null;
   final callback = (params.length > 4 && params[4] is String) ? params[4] as String : null;
+  final txId = (params.length > 5 && params[5] is String) ? params[5] as String : null;
 
   try {
-    final res = await ds.generateQr(
+    debugPrint('_generateQrFutureProvider -> calling ds.generateQr amount=$amount destination=$destination txId=$txId');
+    final res = await ds
+        .generateQr(
       amount: amount,
       gloss: gloss,
       additionalData: additional,
       destinationAccountId: destination,
       callbackUrl: callback,
-    );
+      transactionIdentifier: txId,
+    )
+        .timeout(const Duration(seconds: 15), onTimeout: () {
+      debugPrint('_generateQrFutureProvider -> generateQr timed out');
+      return {'ok': false, 'error': 'timeout', 'payload': {'amount': amount, 'destination': destination}};
+    });
+
     return res;
   } catch (e) {
     debugPrint('_generateQrFutureProvider -> error: $e');

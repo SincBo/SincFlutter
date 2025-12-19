@@ -274,18 +274,22 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                     // SUBSCRIPTION ROWS (mock data)
                     _subscriptionRow(
                       context,
+                      ref: localRef,
                       title: 'Comunidad SINC',
-                      price: '${creator.precioSuscripcion}',
+                      price: '${creator.planes?[0]['precio']}',
                       description:
                           'Añade el precio para ingresar a tu comunidad, en este nivel, tu comunidad recibirá mensajes, notas de voz, imágenes.',
+                      planId: creator.planes?[0]['id_plan'],
                     ),
                     const SizedBox(height: 16),
                     _subscriptionRow(
                       context,
+                      ref: localRef,
                       title: 'Fellow',
-                      price: '${creator.precioSuscripcionFellow}',
+                      price: '${creator.planes?[1]['precio']}',
                       description:
                           'Esta es una sección más cercana a tu comunidad, con espacios limitados. Quienes están en este apartado pagarán un monto mayor.',
+                      planId: creator.planes?[1]['id_plan'],
                     ),
 
                     const SizedBox(height: 20),
@@ -341,7 +345,7 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
   }
 
   Widget _subscriptionRow(BuildContext context,
-      {required String title, required String price, required String description}) {
+      {required String title, required String price, required String description, required WidgetRef ref, required String planId}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -390,14 +394,44 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton(
-                  onPressed: () {
-                    final amount = price.contains('bs') ? price : '$price bs';
+                  onPressed: () async {
+                    // Parse price as double (strip non-numeric)
+                    final amountNum = double.tryParse(price.toString().replaceAll(RegExp('[^0-9.]'), '')) ?? 0.0;
+                    if (amountNum <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Monto inválido')));
+                      return;
+                    }
+
+                    // 1) Crear transacción en backend
+                    final repo = ref.read(creatorRepositoryProvider);
+                    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                    String? idTransaccion;
+                    try {
+                      idTransaccion = await repo.createTransaction(
+                        creatorId: widget.creator.idUsuario,
+                        planId: planId,
+                        price: amountNum,
+                      );
+                    } catch (e) {
+                      idTransaccion = null;
+                    }
+
+                    if (Navigator.of(context).canPop()) Navigator.of(context).pop(); // dismiss loading
+
+                    if (idTransaccion == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo crear la transacción')));
+                      return;
+                    }
+
+                    // 2) Navegar a la página de confirmación de pago con transactionId
+                    final amountLabel = price.contains('bs') ? price : '$price bs';
                     Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => PaymentConfirmationPage(
                         recipient: widget.creator.nombreUsuario,
-                        amount: amount,
+                        amount: amountLabel,
                         concept: title,
                         destinationAccountId: widget.creator.idUsuario,
+                        additionalData: 'Transacción $idTransaccion',
                       ),
                     ));
                   },
