@@ -20,6 +20,7 @@ class PaymentConfirmationPage extends ConsumerWidget {
   final String destinationAccountId; // Destination account for the QR
   final String? additionalData; // optional additional data sent to the edge function
   final String? callbackUrl; // optional callback url
+  final String? transactionId; // id_transaccion para el edge
 
   const PaymentConfirmationPage({
     Key? key,
@@ -28,6 +29,7 @@ class PaymentConfirmationPage extends ConsumerWidget {
     this.concept = 'suscripción/solicitud',
     this.destinationAccountId = '3332CO',
     this.additionalData,
+    this.transactionId,
     this.callbackUrl = 'https://tuapp.com/api/callback',
   }) : super(key: key);
 
@@ -40,14 +42,14 @@ class PaymentConfirmationPage extends ConsumerWidget {
     // Do not call the Edge function if the amount is invalid (<= 0).
     AsyncValue<dynamic>? qrAsync;
 
-    // Build a stable provider parameter (JSON string) so Riverpod doesn't recreate
-    // the family provider on every build due to List identity differences.
+    // Pack params: include transactionId to use in edge invocation
     final providerParam = jsonEncode([
       parsedAmount,
       concept,
       destinationAccountId,
       additionalData ?? 'Pago ${amount}',
       callbackUrl,
+      transactionId ?? '',
     ]);
 
     if (parsedAmount > 0) {
@@ -83,40 +85,18 @@ class PaymentConfirmationPage extends ConsumerWidget {
             tooltip: 'Test QR (debug)',
             icon: const Icon(Icons.bug_report_outlined),
             onPressed: () async {
-              final ds = ref.read(supabaseDataSourceProvider);
-              final testAmount = parsedAmount > 0 ? parsedAmount : 10.0;
-              final body = {
-                'amount': testAmount,
-                'gloss': concept,
-                'additionalData': additionalData ?? 'Pago $amount',
-                'destinationAccountId': destinationAccountId,
-                'callbackUrl': callbackUrl,
-              };
-
+              final client = ref.read(supabaseClientProvider);
+              final txId = transactionId ?? '';
               showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
               dynamic res;
               try {
-                res = await ds.generateQr(
-                  amount: testAmount,
-                  gloss: concept,
-                  additionalData: additionalData ?? 'Pago $amount',
-                  destinationAccountId: destinationAccountId,
-                  callbackUrl: callbackUrl,
-                );
+                res = await client.functions.invoke('vpay-generate-qr', body: {'id_transaccion': txId});
+                try { res = res.data ?? res; } catch (_) {}
               } catch (e) {
-                res = {'ok': false, 'error': e.toString(), 'body': body};
+                res = {'ok': false, 'error': e.toString()};
               }
-
-              if (Navigator.of(context).canPop()) Navigator.of(context).pop(); // dismiss loading
-
-              await showDialog<void>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Debug generateQr result'),
-                  content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(res))),
-                  actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))],
-                ),
-              );
+              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+              await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('Debug edge result'), content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(res))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))]));
             },
           ),
         ],
@@ -285,7 +265,6 @@ class PaymentConfirmationPage extends ConsumerWidget {
   }
 
   Widget _buildQrContent(BuildContext context, ThemeData theme, AsyncValue<dynamic>? qrAsync, double parsedAmount, String amount, String concept, String destinationAccountId, String? additionalData, String? callbackUrl, WidgetRef ref, String providerParam) {
-    // Handle null or invalid amount
     if (parsedAmount <= 0) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -301,53 +280,50 @@ class PaymentConfirmationPage extends ConsumerWidget {
 
     return qrAsync!.when<Widget>(
       data: (res) {
-        // If the datasource returned a structured error (ok: false), show it
+        // Edge success shape { success: true, idQr, qr }
+        if (res is Map && res.containsKey('qr') && res['qr'] is String) {
+          final payload = (res['qr'] as String).trim();
+          try {
+            final cleaned = payload.replaceAll('\n', '');
+            final bytes = base64Decode(cleaned);
+            return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+          } catch (_) {
+            // Try as data-uri
+            try {
+              final maybeDataUri = 'data:image/png;base64,$payload';
+              final bytes = Uri.parse(maybeDataUri).data?.contentAsBytes();
+              if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+            } catch (_) {}
+          }
+        }
+
+        // Structured error
         if (res is Map && (res['ok'] == false || res.containsKey('error'))) {
-          final errMsg = res['error'] ?? res['message'] ?? res.toString();
-          final sentBody = res['body'] != null ? res['body'].toString() : 'N/A';
+          final errMsg = res['error']?.toString() ?? res['message']?.toString() ?? 'Error desconocido';
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.error_outline, size: 40, color: Colors.redAccent),
               const SizedBox(height: 8),
-              Text('Error al generar QR', style: theme.textTheme.titleMedium?.copyWith(color: Colors.redAccent)),
+              Text('Error al generar QR', style: theme.textTheme.titleMedium?.copyWith(color: Colors.redAccent), textAlign: TextAlign.center),
               const SizedBox(height: 6),
               Text(errMsg, textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text('Request body enviado:', style: theme.textTheme.bodySmall),
-              SelectableText(sentBody, textAlign: TextAlign.center),
               const SizedBox(height: 8),
               ElevatedButton(onPressed: () => ref.refresh(_generateQrFutureProvider(providerParam)), child: const Text('Reintentar')),
             ],
           );
         }
 
-        // Handle successful responses
-        if (res == null) {
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.qr_code, size: 92, color: theme.colorScheme.primary.withAlpha(230)),
-              const SizedBox(height: 12),
-              Text('QR de pago', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54)),
-            ],
-          );
-        }
-
-        // Try to extract a payload (base64/data-uri/URL)
+        // Generic extraction path
         final payload = _extractQrPayload(res);
         if (payload != null && payload.isNotEmpty) {
-          // If payload looks like a numeric identifier (e.g. '165805'), fetch the QR image by id
           final isNumericId = RegExp(r'^\d{3,}$').hasMatch(payload);
           if (isNumericId) {
-            // Automatically fetch the QR image by id using provider
             final idAsync = ref.watch(_getQrByIdProvider(payload));
             return idAsync.when<Widget>(
               data: (fetched) {
-                final fetchedPayload = _extractQrPayload(fetched);
-                if (fetchedPayload != null && fetchedPayload.isNotEmpty) {
-                  // Render using the same logic (url / data-uri / base64)
-                  final p = fetchedPayload;
+                final p = _extractQrPayload(fetched);
+                if (p != null && p.isNotEmpty) {
                   if (p.startsWith('http')) return Image.network(p, width: 200, height: 200, fit: BoxFit.contain);
                   if (p.contains('base64') && p.startsWith('data:')) {
                     try {
@@ -367,7 +343,6 @@ class PaymentConfirmationPage extends ConsumerWidget {
                     } catch (_) {}
                   }
                 }
-                // Fallback: show raw fetched content
                 return SelectableText(fetched?.toString() ?? 'Sin datos', textAlign: TextAlign.center);
               },
               loading: () => Column(
@@ -381,60 +356,40 @@ class PaymentConfirmationPage extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text('No se pudo obtener la imagen del QR', textAlign: TextAlign.center),
                   const SizedBox(height: 8),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 12,
-                    children: [
-                      ElevatedButton(onPressed: () => ref.refresh(_getQrByIdProvider(payload)), child: const Text('Reintentar')),
-                      ElevatedButton(onPressed: () async {
-                        await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('Respuesta cruda'), content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(res))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))]));
-                      }, child: const Text('Ver respuesta cruda')),
-                      ElevatedButton(onPressed: () => Clipboard.setData(ClipboardData(text: payload)).then((_) => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID copiado')))), child: const Text('Copiar ID')),
-                    ],
-                  ),
+                  ElevatedButton(onPressed: () => ref.refresh(_getQrByIdProvider(payload)), child: const Text('Reintentar')),
                 ],
               ),
             );
           }
 
-           // URL
-           if (payload.startsWith('http')) {
-             return Image.network(payload, width: 200, height: 200, fit: BoxFit.contain);
-           }
+          if (payload.startsWith('http')) {
+            return Image.network(payload, width: 200, height: 200, fit: BoxFit.contain);
+          }
+          if (payload.contains('base64') && payload.startsWith('data:')) {
+            try {
+              final bytes = Uri.parse(payload).data?.contentAsBytes();
+              if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+            } catch (_) {}
+          }
+          try {
+            final cleaned = payload.replaceAll('\n', '');
+            final bytes = base64Decode(cleaned);
+            return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+          } catch (_) {
+            try {
+              final maybeDataUri = 'data:image/png;base64,$payload';
+              final bytes = Uri.parse(maybeDataUri).data?.contentAsBytes();
+              if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
+            } catch (_) {}
+          }
+        }
 
-           // data URI
-           if (payload.contains('base64') && payload.startsWith('data:')) {
-             try {
-               final bytes = Uri.parse(payload).data?.contentAsBytes();
-               if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
-             } catch (_) {}
-           }
-
-           // raw base64 -> try decode
-           try {
-             final cleaned = payload.replaceAll('\n', '');
-             final bytes = base64Decode(cleaned);
-             return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
-           } catch (_) {
-             // try as data:image/png;base64,
-             try {
-               final maybeDataUri = 'data:image/png;base64,$payload';
-               final bytes = Uri.parse(maybeDataUri).data?.contentAsBytes();
-               if (bytes != null) return Image.memory(bytes, width: 200, height: 200, fit: BoxFit.contain);
-             } catch (_) {}
-           }
-         }
-
-        // String responses that didn't match above
         if (res is String) {
           return SelectableText(res, textAlign: TextAlign.center);
         }
-
         if (res is Map) {
           return SelectableText(JsonEncoder.withIndent('  ').convert(res), textAlign: TextAlign.center);
         }
-
-        // Default fallback
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -444,50 +399,10 @@ class PaymentConfirmationPage extends ConsumerWidget {
           ],
         );
       },
-      loading: () {
-        // Show a spinner but also offer retry/debug buttons to avoid appearing stuck
-        final ds = ref.read(supabaseDataSourceProvider);
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 12),
-            const Text('Generando QR...'),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: () => ref.refresh(_generateQrFutureProvider(providerParam)),
-                  child: const Text('Reintentar'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: () async {
-                    // Direct debug call to the datasource and show the raw response
-                    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-                    dynamic debugRes;
-                    try {
-                      final List<dynamic> params = List<dynamic>.from(jsonDecode(providerParam) as List);
-                      final amount = (params.isNotEmpty && (params[0] is num || params[0] is String)) ? (params[0] is String ? double.tryParse(params[0]) ?? 0.0 : (params[0] as num).toDouble()) : 0.0;
-                      final gloss = (params.length > 1 && params[1] is String) ? params[1] as String : 'Pago';
-                      final destination = (params.length > 2 && params[2] is String) ? params[2] as String : '3332CO';
-                      final additional = (params.length > 3 && params[3] is String) ? params[3] as String : null;
-                      final callback = (params.length > 4 && params[4] is String) ? params[4] as String : null;
-                      debugRes = await ds.generateQr(amount: amount, gloss: gloss, additionalData: additional, destinationAccountId: destination, callbackUrl: callback);
-                    } catch (e) {
-                      debugRes = {'ok': false, 'error': e.toString()};
-                    }
-                    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-                    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('Debug generateQr result'), content: SingleChildScrollView(child: SelectableText(JsonEncoder.withIndent('  ').convert(debugRes))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cerrar'))]));
-                  },
-                  child: const Text('Debug'),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+      loading: () => Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [CircularProgressIndicator(), SizedBox(height: 8), Text('Generando QR...')],
+      ),
       error: (err, st) => Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -506,48 +421,29 @@ class PaymentConfirmationPage extends ConsumerWidget {
 
 // Provider to fetch QR by identifier when generateQr returns an id (e.g. '165805')
 final _getQrByIdProvider = FutureProvider.family<dynamic, String>((ref, id) async {
-  final ds = ref.read(supabaseDataSourceProvider);
+  final client = ref.read(supabaseClientProvider);
   try {
-    final res = await ds.getQrById(id).timeout(const Duration(seconds: 15), onTimeout: () => {'ok': false, 'error': 'timeout', 'id': id});
-    return res;
+    final resp = await client.functions.invoke('vpay-get-qr', body: {'id': id});
+    dynamic data; try { data = resp.data; } catch (_) { data = resp; }
+    return data;
   } catch (e) {
-    debugPrint('_getQrByIdProvider -> error: $e');
     throw e;
   }
 });
 
 // Provider to generate QR via Supabase datasource. Returns dynamic payload from the edge function.
 final _generateQrFutureProvider = FutureProvider.family<dynamic, String>((ref, paramsJson) async {
-  // paramsJson is a JSON-encoded list: [amountDouble, glossString, destinationAccountIdString, additionalData?, callbackUrl?]
-  final ds = ref.read(supabaseDataSourceProvider);
-
+  final client = ref.read(supabaseClientProvider);
   final List<dynamic> params = List<dynamic>.from(jsonDecode(paramsJson) as List);
-  final amount = (params.isNotEmpty && (params[0] is num || params[0] is String)) ? (params[0] is String ? double.tryParse(params[0]) ?? 0.0 : (params[0] as num).toDouble()) : 0.0;
-  final gloss = (params.length > 1 && params[1] is String) ? params[1] as String : 'Pago';
-  final destination = (params.length > 2 && params[2] is String) ? params[2] as String : '3332CO';
-  final additional = (params.length > 3 && params[3] is String) ? params[3] as String : null;
-  final callback = (params.length > 4 && params[4] is String) ? params[4] as String : null;
-  final txId = (params.length > 5 && params[5] is String) ? params[5] as String : null;
-
+  final txId = (params.length > 5 && params[5] is String) ? params[5] as String : '';
+  if (txId.isEmpty) {
+    return {'ok': false, 'error': 'missing transaction id'};
+  }
   try {
-    debugPrint('_generateQrFutureProvider -> calling ds.generateQr amount=$amount destination=$destination txId=$txId');
-    final res = await ds
-        .generateQr(
-      amount: amount,
-      gloss: gloss,
-      additionalData: additional,
-      destinationAccountId: destination,
-      callbackUrl: callback,
-      transactionIdentifier: txId,
-    )
-        .timeout(const Duration(seconds: 15), onTimeout: () {
-      debugPrint('_generateQrFutureProvider -> generateQr timed out');
-      return {'ok': false, 'error': 'timeout', 'payload': {'amount': amount, 'destination': destination}};
-    });
-
-    return res;
+    final resp = await client.functions.invoke('vpay-generate-qr', body: {'id_transaccion': txId});
+    dynamic data; try { data = resp.data; } catch (_) { data = resp; }
+    return data;
   } catch (e) {
-    debugPrint('_generateQrFutureProvider -> error: $e');
     throw e;
   }
 });

@@ -432,6 +432,7 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                         concept: title,
                         destinationAccountId: widget.creator.idUsuario,
                         additionalData: 'Transacción $idTransaccion',
+                          transactionId: idTransaccion
                       ),
                     ));
                   },

@@ -30,6 +30,20 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   final ScrollController _scrollController = ScrollController();
   bool _isComposing = false;
 
+  bool get _isCommunityChat {
+    // Consider "Comunidad" if categoria matches or any plan in planes has nombre == Comunidad
+    final cat = widget.creator.categoria?.toLowerCase() ?? '';
+    if (cat.contains('comunidad')) return true;
+    final planes = widget.creator.planes ?? [];
+    for (final p in planes) {
+      try {
+        final name = (p is Map && p['nombre'] is String) ? (p['nombre'] as String).toLowerCase() : '';
+        if (name.contains('comunidad')) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +96,11 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   }
 
   Future<void> _handleSubmitted(String text) async {
+    if (_isCommunityChat) {
+      // In community mode, user cannot send messages
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('En Comunidad solo el creador puede escribir')));
+      return;
+    }
     if (text.trim().isEmpty) return;
     final msg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -217,13 +236,14 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       Widget messagesListWidget() {
         if (widget.chatId == null) {
           // demo/local messages
+          final source = _isCommunityChat ? _messages.where((m) => !m.fromMe).toList() : _messages;
           return ListView.builder(
             controller: _scrollController,
             reverse: true,
             padding: const EdgeInsets.only(top: 12, bottom: 12),
-            itemCount: _messages.length,
+            itemCount: source.length,
             itemBuilder: (context, index) {
-              final m = _messages[index];
+              final m = source[index];
               return _buildMessageBubble(m);
             },
           );
@@ -234,7 +254,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         return mensajesAsync.when(
           data: (list) {
             // Map MessageEntity -> ChatMessage (ascending order expected from provider)
-            final backend = list.map((e) {
+            final backendAll = list.map((e) {
               DateTime ts;
               try {
                 ts = e.fechaEnvio != null && e.fechaEnvio!.isNotEmpty ? DateTime.parse(e.fechaEnvio!) : DateTime.now();
@@ -245,8 +265,11 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
               return ChatMessage(id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(), text: e.contenido, timestamp: ts, fromMe: isFromMe);
             }).toList();
 
-            // backend is ascending (oldest -> newest). Append local optimistic messages to show newest after backend
-            final combined = List<ChatMessage>.from(backend)..addAll(_localOutgoing);
+            // Community mode: only show creator messages (not fromMe)
+            final backend = _isCommunityChat ? backendAll.where((m) => !m.fromMe).toList() : backendAll;
+
+            // backend is ascending (oldest -> newest). Append local optimistic messages only if not community mode
+            final combined = _isCommunityChat ? backend : (List<ChatMessage>.from(backend)..addAll(_localOutgoing));
 
             return ListView.builder(
               controller: _scrollController,
@@ -298,41 +321,50 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 ),
               ),
               const Divider(height: 1),
-              Container(
-                color: Theme.of(context).cardColor,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  children: [
-                    IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
-                    Expanded(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 150),
-                        child: Scrollbar(
-                          child: TextField(
-                            controller: _controller,
-                            keyboardType: TextInputType.multiline,
-                            maxLines: null,
-                            decoration: const InputDecoration(
-                              hintText: 'Escribe un mensaje',
-                              border: InputBorder.none,
-                              isDense: true,
+              // Input disabled in community mode
+              if (!_isCommunityChat)
+                Container(
+                  color: Theme.of(context).cardColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    children: [
+                      IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
+                      Expanded(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          child: Scrollbar(
+                            child: TextField(
+                              controller: _controller,
+                              keyboardType: TextInputType.multiline,
+                              maxLines: null,
+                              decoration: const InputDecoration(
+                                hintText: 'Escribe un mensaje',
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                              onChanged: (val) {
+                                setState(() => _isComposing = val.trim().isNotEmpty);
+                              },
+                              onSubmitted: (val) => _handleSubmitted(val),
                             ),
-                            onChanged: (val) {
-                              setState(() => _isComposing = val.trim().isNotEmpty);
-                            },
-                            onSubmitted: (val) => _handleSubmitted(val),
                           ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: _isComposing ? () => _handleSubmitted(_controller.text) : null,
-                      color: Theme.of(context).colorScheme.primary,
-                      icon: const Icon(Icons.send),
-                    ),
-                  ],
+                      IconButton(
+                        onPressed: _isComposing ? () => _handleSubmitted(_controller.text) : null,
+                        color: Theme.of(context).colorScheme.primary,
+                        icon: const Icon(Icons.send),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              if (_isCommunityChat)
+                Container(
+                  color: Theme.of(context).cardColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  alignment: Alignment.center,
+                  child: const Text('Modo Comunidad: solo el creador puede enviar mensajes'),
+                ),
             ],
           ),
         ),

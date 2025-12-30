@@ -589,8 +589,6 @@ class SupabaseDataSource {
       final rpcRes = await client.rpc('get_creadores_por_tipo', params: {
         'p_user_id': user.id,
         'p_tipo': tipo,
-        'p_limit': limit,
-        'p_offset': offset,
       });
 
       if (rpcRes == null) return [];

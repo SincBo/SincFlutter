@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/search_bar.dart';
 import '../../../providers/providers.dart';
 import '../../../data/models/creator_por_tipo_model.dart';
+import '../../../domain/entities/creator.dart';
+import '../chat_page.dart';
 
 class FellowPage extends ConsumerStatefulWidget {
   const FellowPage({Key? key}) : super(key: key);
@@ -32,7 +34,7 @@ class _FellowPageState extends ConsumerState<FellowPage> {
     });
     try {
       final ds = ref.read(supabaseDataSourceProvider);
-      final results = await ds.obtenerCreadoresPorTipo('fellow', limit: 100, offset: 0);
+      final results = await ds.obtenerCreadoresPorTipo('Fellow', limit: 100, offset: 0);
       setState(() {
         _data
           ..clear()
@@ -145,8 +147,41 @@ class _FellowPageState extends ConsumerState<FellowPage> {
                             leading: CircleAvatar(child: Text(initials)),
                             title: Text(c.nombreCreador),
                             subtitle: Text('${c.tipoPlan} · Bs ${c.precioPlan.toStringAsFixed(2)}'),
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abrir ${c.nombreCreador}')));
+                            onTap: () async {
+                              // Crear u obtener chat id y navegar a ChatPage
+                              showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                              String? chatId;
+                              try {
+                                final repo = ref.read(creatorRepositoryProvider);
+                                chatId = await repo.crearChatYParticipantes(c.idCreador);
+                              } catch (e) {
+                                chatId = null;
+                              }
+                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                              if (!mounted) return;
+                              if (chatId == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir el chat')));
+                                return;
+                              }
+
+                              // Map CreatorPorTipoModel to CreatorEntity minimally
+                              final creator = CreatorEntity(
+                                idUsuario: c.idCreador,
+                                nombreUsuario: c.nombreCreador,
+                                email: '',
+                                bio: c.bio,
+                                precioSuscripcion: c.precioPlan,
+                                precioSuscripcionFellow: c.precioPlan,
+                                categoria: c.tipoPlan,
+                                publicaciones: const [],
+                                planes: const [],
+                              );
+
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChatPage(creator: creator, chatId: chatId),
+                                ),
+                              );
                             },
                           );
                         },
