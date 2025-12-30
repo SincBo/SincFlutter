@@ -32,9 +32,9 @@ class CreatorRepositoryImpl implements CreatorRepository {
   }
 
   @override
-  Future<String?> crearChatYParticipantes(String idCreador) async {
+  Future<String?> crearChatYParticipantes(String idCreador, String idPlan) async {
     try {
-      return await datasource.crearChatYParticipantes(idCreador);
+      return await datasource.crearChatYParticipantes(idCreador, idPlan);
     } catch (e) {
       // Log and return null on failure
       // In higher layers you might want to surface the error instead

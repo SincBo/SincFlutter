@@ -164,16 +164,17 @@ class SupabaseDataSource {
   /// Creates a chat and its participants by calling the Postgres RPC
   /// `crear_chat_y_participantes(id_usuario, id_creador)` and returns the
   /// created chat id as a String, or null on failure.
-  Future<String?> crearChatYParticipantes(String idCreador) async {
+  Future<String?> crearChatYParticipantes(String idCreador, String idPlan) async {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
         return null;
       }
 
-      final rpcRes = await client.rpc('crear_chat_y_participantes', params: {
-        'id_usuario': user.id,
-        'id_creador': idCreador,
+      final rpcRes = await client.rpc('get_or_create_chat_por_plan', params: {
+        'p_id_usuario': user.id,
+        'p_id_creador': idCreador,
+        'p_id_plan': idPlan,
       });
 
       if (rpcRes == null) return null;

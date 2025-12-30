@@ -11,7 +11,7 @@ abstract class CreatorRepository {
 
   /// Crea (si no existe) un chat entre el usuario autenticado y el creador,
   /// y registra los participantes. Devuelve el id del chat o null si falla.
-  Future<String?> crearChatYParticipantes(String idCreador);
+  Future<String?> crearChatYParticipantes(String idCreador, String idPlan);
 
   /// Obtiene los mensajes de un chat por su id (orden ascendente por fecha).
   Future<List<MessageEntity>> obtenerMensajes(String idChat);

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sincboflutter/ui/pages/chat_page.dart';
 import 'package:sincboflutter/ui/pages/home/fellow_page.dart';
-import 'package:sincboflutter/ui/pages/home/chat_page.dart';
 import 'package:sincboflutter/ui/pages/home/publicacion_page.dart';
 import 'package:sincboflutter/ui/pages/home/suscritos_page.dart';
 
+import '../../../domain/entities/creator.dart';
 import '../../../providers/providers.dart';
 import 'comunidad_page.dart';
 
@@ -17,9 +18,27 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   int _currentIndex = 0;
+  int _fellowsCount = 0;
+  int _solicitudesCount = 0;
 
   void _onTap(int index) {
     setState(() => _currentIndex = index);
+  }
+
+  Future<void> _loadCounts() async {
+    try {
+      final ds = ref.read(supabaseDataSourceProvider);
+      // Fellows count placeholder: number of creators of tipo Fellow
+      final fellows = await ds.obtenerCreadoresPorTipo('Fellow', limit: 200, offset: 0);
+      // Solicitudes count placeholder: replace with RPC/table query for pending requests
+      final solicitudes = <dynamic>[];
+      setState(() {
+        _fellowsCount = fellows.length;
+        _solicitudesCount = solicitudes.length;
+      });
+    } catch (_) {
+      // keep current counts
+    }
   }
 
   @override
@@ -28,31 +47,52 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return authState.when(
       data: (user) {
-        // Determine whether the current user is a creator by checking creatorsProvider
         final creatorsAsync = ref.watch(creatorsProvider);
 
         return creatorsAsync.when(
           data: (creators) {
             final isCreator = user != null && creators.any((c) => c.idUsuario == user.id);
 
+            // Defer counts load until after first build to avoid build-time async
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _loadCounts();
+            });
+
             // Build pages and items depending on isCreator
-            final pages = <Widget>[
-              FellowPage(),
-              SuscritosPage(),
-              if (isCreator) ChatPage(),
-              if (isCreator) PublicacionPage(),
-              ComunidadPage(),
-            ];
+            List<Widget> pages;
+            List<BottomNavigationBarItem> items;
 
-            final items = <BottomNavigationBarItem>[
-              const BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Fellows'),
-              const BottomNavigationBarItem(icon: Icon(Icons.post_add), label: 'Suscritos'),
-              const BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad Sinc'),
-              if (isCreator)  const BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
-              if (isCreator)  const BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Ajustes'),
-            ];
+            if (isCreator) {
+              // Order: Comunidad, Fellows(N), Solicitudes(N), Ganancias
+              pages = <Widget>[
+                _ComunidadChatLauncher(userId: user!.id),
+                const FellowPage(),
+                const SuscritosPage(), // placeholder for Solicitudes page
+                const PublicacionPage(), // placeholder for Ganancias page
+              ];
 
-            // Clamp current index in case available pages changed
+              items = <BottomNavigationBarItem>[
+                const BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
+                BottomNavigationBarItem(icon: const Icon(Icons.people), label: 'Fellows (${_fellowsCount})'),
+                BottomNavigationBarItem(icon: const Icon(Icons.mail_outline), label: 'Solicitudes (${_solicitudesCount})'),
+                const BottomNavigationBarItem(icon: Icon(Icons.attach_money), label: 'Ganancias'),
+              ];
+            } else {
+              // Non-creator: Comunidad, Fellows, Suscritos
+              pages = const <Widget>[
+                ComunidadPage(),
+                FellowPage(),
+                SuscritosPage(),
+              ];
+
+              items = const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
+                BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Fellows'),
+                BottomNavigationBarItem(icon: Icon(Icons.post_add), label: 'Suscritos'),
+              ];
+            }
+
+            // Clamp current index if menu size changed
             if (_currentIndex >= pages.length) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) setState(() => _currentIndex = 0);
@@ -76,5 +116,85 @@ class _HomePageState extends ConsumerState<HomePage> {
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) => Scaffold(body: Center(child: Text('Error: ${e.toString()}'))),
     );
+  }
+}
+
+class _ComunidadChatLauncher extends ConsumerStatefulWidget {
+  final String userId;
+  const _ComunidadChatLauncher({Key? key, required this.userId}) : super(key: key);
+
+  @override
+  ConsumerState<_ComunidadChatLauncher> createState() => _ComunidadChatLauncherState();
+}
+
+class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> {
+  String? _chatId;
+  CreatorEntity? _creator;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
+  }
+
+  Future<void> _openChat() async {
+    setState(() => _error = null);
+    try {
+      // Fetch creators and try to find current user as creator entity
+      final repo = ref.read(creatorRepositoryProvider);
+      final creators = await repo.obtenerCreadores();
+
+      CreatorEntity? me;
+      if (creators.isNotEmpty) {
+        me = creators.firstWhere((c) => c.idUsuario == widget.userId, orElse: () => creators.first);
+      }
+
+      if (me == null) {
+        // Fallback: build a minimal CreatorEntity from auth profile
+        final authUser = ref.read(authNotifierProvider).maybeWhen(data: (u) => u, orElse: () => null);
+        if (authUser == null) {
+          setState(() => _error = 'No hay usuario autenticado');
+          return;
+        }
+        me = CreatorEntity(
+          idUsuario: authUser.id,
+          nombreUsuario: authUser.email?.split('@').first ?? 'Creador',
+          email: authUser.email ?? '',
+          bio: 'Perfil de creador',
+          precioSuscripcion: 0.0,
+          precioSuscripcionFellow: 0.0,
+          categoria: 'Comunidad',
+          publicaciones: const [],
+          planes: const [],
+        );
+      }
+
+      _creator = me;
+
+      // Create or get chat for this creator
+      final chatId = await repo.crearChatYParticipantes(me.idUsuario, me.planes?[0]['id_plan'] as String);
+      setState(() => _chatId = chatId?? '');
+    } catch (e) {
+      setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            ElevatedButton(onPressed: () => _openChat(), child: const Text('Reintentar')),
+          ],
+        ),
+      );
+    }
+    if (_chatId == null || _creator == null) return const Center(child: CircularProgressIndicator());
+    return ChatPage(creator: _creator!, chatId: _chatId!);
   }
 }

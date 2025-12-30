@@ -31,7 +31,6 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   bool _isComposing = false;
 
   bool get _isCommunityChat {
-    // Consider "Comunidad" if categoria matches or any plan in planes has nombre == Comunidad
     final cat = widget.creator.categoria?.toLowerCase() ?? '';
     if (cat.contains('comunidad')) return true;
     final planes = widget.creator.planes ?? [];
@@ -42,6 +41,12 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       } catch (_) {}
     }
     return false;
+  }
+
+  bool _isCurrentUserCreator(WidgetRef ref) {
+    final authUser = ref.read(authNotifierProvider).maybeWhen(data: (u) => u, orElse: () => null);
+    if (authUser == null) return false;
+    return authUser.id == widget.creator.idUsuario;
   }
 
   @override
@@ -96,8 +101,9 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   }
 
   Future<void> _handleSubmitted(String text) async {
-    if (_isCommunityChat) {
-      // In community mode, user cannot send messages
+    // Only block community input for non-creators
+    final isCreatorSelf = _isCurrentUserCreator(ref);
+    if (_isCommunityChat && !isCreatorSelf) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('En Comunidad solo el creador puede escribir')));
       return;
     }
@@ -236,7 +242,9 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       Widget messagesListWidget() {
         if (widget.chatId == null) {
           // demo/local messages
-          final source = _isCommunityChat ? _messages.where((m) => !m.fromMe).toList() : _messages;
+          final source = (_isCommunityChat && !_isCurrentUserCreator(ref))
+              ? _messages.where((m) => !m.fromMe).toList()
+              : _messages;
           return ListView.builder(
             controller: _scrollController,
             reverse: true,
@@ -265,11 +273,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
               return ChatMessage(id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(), text: e.contenido, timestamp: ts, fromMe: isFromMe);
             }).toList();
 
-            // Community mode: only show creator messages (not fromMe)
-            final backend = _isCommunityChat ? backendAll.where((m) => !m.fromMe).toList() : backendAll;
+            // Community mode: only show creator messages (not fromMe) for non-creators
+            final backend = (_isCommunityChat && !_isCurrentUserCreator(ref))
+                ? backendAll.where((m) => !m.fromMe).toList()
+                : backendAll;
 
-            // backend is ascending (oldest -> newest). Append local optimistic messages only if not community mode
-            final combined = _isCommunityChat ? backend : (List<ChatMessage>.from(backend)..addAll(_localOutgoing));
+            // backend is ascending (oldest -> newest). Append local optimistic messages only if not community mode or if current user is creator
+            final combined = (_isCommunityChat && !_isCurrentUserCreator(ref))
+                ? backend
+                : (List<ChatMessage>.from(backend)..addAll(_localOutgoing));
 
             return ListView.builder(
               controller: _scrollController,
@@ -321,8 +333,8 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 ),
               ),
               const Divider(height: 1),
-              // Input disabled in community mode
-              if (!_isCommunityChat)
+              // Input disabled in community mode only for non-creators
+              if (!(_isCommunityChat && !_isCurrentUserCreator(ref)))
                 Container(
                   color: Theme.of(context).cardColor,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -358,7 +370,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                     ],
                   ),
                 ),
-              if (_isCommunityChat)
+              if (_isCommunityChat && !_isCurrentUserCreator(ref))
                 Container(
                   color: Theme.of(context).cardColor,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

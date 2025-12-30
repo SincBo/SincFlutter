@@ -153,7 +153,7 @@ class _FellowPageState extends ConsumerState<FellowPage> {
                               String? chatId;
                               try {
                                 final repo = ref.read(creatorRepositoryProvider);
-                                chatId = await repo.crearChatYParticipantes(c.idCreador);
+                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan);
                               } catch (e) {
                                 chatId = null;
                               }
