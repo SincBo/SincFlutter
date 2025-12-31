@@ -20,6 +20,20 @@ class LoginPage extends ConsumerWidget {
     );
   }
 
+  void _showSignUpSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => const Padding(
+        padding: EdgeInsets.only(top: 8.0),
+        child: SignUpSheet(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -71,9 +85,7 @@ class LoginPage extends ConsumerWidget {
                       padding: EdgeInsets.symmetric(vertical: 14),
                       child: Text('Registro'),
                     ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ir a Registro')));
-                    },
+                    onPressed: () => _showSignUpSheet(context),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -262,5 +274,185 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
         );
       },
     );
+  }
+}
+
+class SignUpSheet extends ConsumerStatefulWidget {
+  const SignUpSheet({Key? key}) : super(key: key);
+
+  @override
+  ConsumerState<SignUpSheet> createState() => _SignUpSheetState();
+}
+
+class _SignUpSheetState extends ConsumerState<SignUpSheet> {
+  final _nombreController = TextEditingController();
+  final _apellidoController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _telefonoController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _codigoInvController = TextEditingController();
+  bool _esCreador = false;
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _apellidoController.dispose();
+    _emailController.dispose();
+    _telefonoController.dispose();
+    _passwordController.dispose();
+    _codigoInvController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onSubmit() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    final nombre = _nombreController.text.trim();
+    final apellido = _apellidoController.text.trim();
+    final email = _emailController.text.trim();
+    final telefono = _telefonoController.text.trim();
+    final password = _passwordController.text;
+    final codigoInv = _codigoInvController.text.trim();
+
+    if (nombre.isEmpty || apellido.isEmpty || email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Complete nombre, apellido, correo y contraseña')));
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
+    final nombreUsuario = '$nombre $apellido'.trim();
+    final ds = ref.read(supabaseDataSourceProvider);
+    try {
+      final user = await ds.signUpWithEmail(email: email, password: password, nombreUsuario: nombreUsuario, esCreador: _esCreador);
+      if (user != null) {
+        try {
+          await ds.client.from('Usuario').update({
+            'telefono': telefono,
+            'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
+          }).eq('id_usuario', user.id);
+        } catch (_) {}
+        // Auto-login so user enters the app immediately
+        await ref.read(authNotifierProvider.notifier).signIn(email, password);
+      } else {
+        // If sign-up requires email confirmation, try login anyway; Supabase will error until confirmed
+        await ref.read(authNotifierProvider.notifier).signIn(email, password);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error en registro: $e')));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Consumer(builder: (context, localRef, child) {
+      // Close sheet on successful auth (like SignInSheet)
+      localRef.listen<AsyncValue<dynamic>>(authNotifierProvider, (previous, next) {
+        next.when(
+          data: (user) {
+            if (user != null) {
+              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+            }
+          },
+          loading: () {},
+          error: (e, st) {
+            // Show error only if currently submitting to avoid noise
+            if (_isSubmitting) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de inicio tras registro: $e')));
+            }
+          },
+        );
+      });
+
+      final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+      return Padding(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Registro', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _nombreController,
+                    decoration: const InputDecoration(labelText: 'Nombre'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _apellidoController,
+                    decoration: const InputDecoration(labelText: 'Apellido'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Correo'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _telefonoController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(labelText: 'Telefono'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Contraseña'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _codigoInvController,
+                    decoration: const InputDecoration(labelText: 'Código de invitación (opcional)'),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    value: _esCreador,
+                    onChanged: (v) => setState(() => _esCreador = v),
+                    title: const Text('Soy creador de contenido'),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _onSubmit,
+                      child: _isSubmitting
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Text('Continuar'),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
+    });
   }
 }

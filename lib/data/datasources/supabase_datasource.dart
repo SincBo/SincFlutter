@@ -731,6 +731,51 @@ class SupabaseDataSource {
     }
   }
 
+  /// Registra un usuario en Supabase Auth y luego inserta en la tabla `Usuario`.
+  /// Nota: No guardes contraseñas en texto plano en producción.
+  Future<UserModel?> signUpWithEmail({
+    required String email,
+    required String password,
+    required String nombreUsuario,
+    bool esCreador = false,
+  }) async {
+    try {
+      // 1) Registro en Supabase Auth con metadatos
+      final signUpRes = await client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'nombre_usuario': nombreUsuario,
+          'es_creador': esCreador,
+        },
+      );
+
+      final user = signUpRes.user;
+      if (user == null) {
+        return null; // Sign-up could be pending email confirmation depending on project settings
+      }
+
+      // 2) Inserción en la tabla Usuario (ajusta el nombre/campos a tu esquema)
+      try {
+        await client.from('usuario').insert({
+          'id_usuario': user.id,
+          'nombre_usuario': nombreUsuario,
+          'email': email,
+          // 'contraseña': password, // ⚠️ Evitar en producción
+          'es_creador': esCreador,
+        });
+      } catch (e) {
+        // Si la fila ya existe o hay RLS, ignora o maneja según sea necesario
+        debugPrint('signUpWithEmail -> insert Usuario error: $e');
+      }
+
+      return UserModel.fromUser(user);
+    } catch (e) {
+      debugPrint('signUpWithEmail -> error: $e');
+      rethrow; // permite que la capa superior muestre el error
+    }
+  }
+
   /// Obtiene las ganancias del creador por mes desde el RPC `get_ganancias_creador_mes_v1`.
   /// Devuelve una lista de mapas con la forma:
   /// [{
