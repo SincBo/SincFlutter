@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/ui/pages/chat_page.dart';
 import 'package:sincboflutter/ui/pages/home/fellow_page.dart';
-import 'package:sincboflutter/ui/pages/home/publicacion_page.dart';
+import 'package:sincboflutter/ui/pages/home/ganancias_page.dart';
 import 'package:sincboflutter/ui/pages/home/suscritos_page.dart';
 
 import '../../../domain/entities/creator.dart';
@@ -68,7 +68,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 _ComunidadChatLauncher(userId: user!.id),
                 const FellowPage(),
                 const SuscritosPage(), // placeholder for Solicitudes page
-                const PublicacionPage(), // placeholder for Ganancias page
+                const GananciasPage(), // placeholder for Ganancias page
               ];
 
               items = <BottomNavigationBarItem>[
