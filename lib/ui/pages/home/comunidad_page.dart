@@ -179,72 +179,6 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                     ],
                   ),
                 ),
-                // Debug button to fetch raw RPC results from Supabase
-                IconButton(
-                  icon: const Icon(Icons.bug_report),
-                  tooltip: 'Debug: cargar creadores (RPC)',
-                  onPressed: () async {
-                    try {
-                      final ds = ref.read(supabaseDataSourceProvider);
-                      final res = await ds.client.rpc('obtener_creadores');
-                      final jsonStr = const JsonEncoder.withIndent('  ').convert(res);
-                      if (!mounted) return;
-                      await showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('RPC obtener_creadores (raw)'),
-                          content: SingleChildScrollView(child: Text(jsonStr)),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
-                          ],
-                        ),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      await showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Error'),
-                          content: Text('Error al llamar RPC: $e'),
-                          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar'))],
-                        ),
-                      );
-                    }
-                  },
-                ),
-                // Debug button to call the repository method (mapped results)
-                IconButton(
-                  icon: const Icon(Icons.data_object),
-                  tooltip: 'Debug: cargar creadores (repobuscar)',
-                  onPressed: () async {
-                    try {
-                      final repo = ref.read(creatorRepositoryProvider);
-                      final results = await repo.buscarCreadores('');
-                      final jsonStr = const JsonEncoder.withIndent('  ').convert(results.map((r) => r.toMap()).toList());
-                      if (!mounted) return;
-                      await showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Repo buscarCreadores (mapped)'),
-                          content: SingleChildScrollView(child: Text(jsonStr)),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
-                          ],
-                        ),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      await showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Error'),
-                          content: Text('Error al llamar repo.buscarCreadores: $e'),
-                          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar'))],
-                        ),
-                      );
-                    }
-                  },
-                ),
               ],
             ),
 
@@ -257,10 +191,6 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
               debounceDuration: const Duration(milliseconds: 300),
               onChanged: _onSearchChanged,
             ),
-
-            const SizedBox(height: 8),
-            // Debug/status row: show last query and count
-            Text('Última búsqueda: "$_searchQuery" — resultados: ${_creators.length}'),
 
             const SizedBox(height: 16),
 

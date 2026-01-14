@@ -122,7 +122,6 @@ class _SuscritosPageState extends ConsumerState<SuscritosPage> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text('Error: $_error', style: const TextStyle(color: Colors.red)),
               ),
-            Text('Tipo: comunidad — resultados: ${_filtered.length}'),
 
             const SizedBox(height: 8),
 
@@ -158,7 +157,7 @@ class _SuscritosPageState extends ConsumerState<SuscritosPage> {
                               String? chatId;
                               try {
                                 final repo = ref.read(creatorRepositoryProvider);
-                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan);
+                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan, false);
                               } catch (e) {
                                 chatId = null;
                               }

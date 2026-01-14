@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/ui/pages/chat_page.dart';
+import 'package:sincboflutter/ui/pages/home/fellow_creator_page.dart';
 import 'package:sincboflutter/ui/pages/home/fellow_page.dart';
 import 'package:sincboflutter/ui/pages/home/ganancias_page.dart';
 import 'package:sincboflutter/ui/pages/home/suscritos_page.dart';
@@ -66,7 +67,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               // Order: Comunidad, Fellows(N), Solicitudes(N), Ganancias
               pages = <Widget>[
                 _ComunidadChatLauncher(userId: user!.id),
-                const FellowPage(),
+                const FellowCreatorPage(),
                 const SuscritosPage(), // placeholder for Solicitudes page
                 const GananciasPage(), // placeholder for Ganancias page
               ];
@@ -173,7 +174,7 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
       _creator = me;
 
       // Create or get chat for this creator
-      final chatId = await repo.crearChatYParticipantes(me.idUsuario, me.planes?[0]['id_plan'] as String);
+      final chatId = await repo.crearChatYParticipantes(me.idUsuario, me.planes?[0]['id_plan'] as String, false);
       setState(() => _chatId = chatId?? '');
     } catch (e) {
       setState(() => _error = e.toString());

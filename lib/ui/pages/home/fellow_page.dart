@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/search_bar.dart';
@@ -121,7 +123,6 @@ class _FellowPageState extends ConsumerState<FellowPage> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text('Error: $_error', style: const TextStyle(color: Colors.red)),
               ),
-            Text('Tipo: fellow — resultados: ${_filtered.length}'),
 
             const SizedBox(height: 12),
 
@@ -153,7 +154,7 @@ class _FellowPageState extends ConsumerState<FellowPage> {
                               String? chatId;
                               try {
                                 final repo = ref.read(creatorRepositoryProvider);
-                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan);
+                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan, false);
                               } catch (e) {
                                 chatId = null;
                               }

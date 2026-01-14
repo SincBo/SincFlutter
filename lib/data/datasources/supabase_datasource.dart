@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
@@ -7,8 +9,10 @@ import '../models/chat_con_creador_model.dart';
 import '../models/creator_por_tipo_model.dart';
 import '../models/ganancias_mes_model.dart';
 import '../models/top_pago_mes_model.dart';
+import '../models/usuario_por_tipo_model.dart';
 import '../utils/safe_map.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 
 class SupabaseDataSource {
   final SupabaseClient client;
@@ -166,7 +170,7 @@ class SupabaseDataSource {
   /// Creates a chat and its participants by calling the Postgres RPC
   /// `crear_chat_y_participantes(id_usuario, id_creador)` and returns the
   /// created chat id as a String, or null on failure.
-  Future<String?> crearChatYParticipantes(String idCreador, String idPlan) async {
+  Future<String?> crearChatYParticipantes(String idCreador, String idPlan, bool isCreator) async {
     try {
       final user = client.auth.currentUser;
       if (user == null) {
@@ -174,8 +178,8 @@ class SupabaseDataSource {
       }
 
       final rpcRes = await client.rpc('get_or_create_chat_por_plan', params: {
-        'p_id_usuario': user.id,
-        'p_id_creador': idCreador,
+        'p_id_usuario': isCreator? idCreador : user.id,
+        'p_id_creador': isCreator? user.id : idCreador,
         'p_id_plan': idPlan,
       });
 
@@ -230,6 +234,58 @@ class SupabaseDataSource {
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Envía un mensaje con imágenes usando el RPC `enviar_mensaje_con_imagenes`.
+  /// Devuelve el `id_mensaje` como String o null si falla.
+  Future<String?> enviarMensajeConImagenes({
+    required String chatId,
+    required String text,
+    required List<String> imageUrls,
+  }) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        return null;
+      }
+
+      final res = await client.rpc('enviar_mensaje_con_imagenes', params: {
+        'p_id_chat': chatId,
+        'p_contenido': text,
+        'p_urls': imageUrls, // puede ser []
+      });
+
+      // Helper to extract id_mensaje across common shapes
+      String? parseId(dynamic value) {
+        if (value == null) return null;
+        if (value is String && value.isNotEmpty) return value;
+        if (value is num) return value.toString();
+        if (value is List && value.isNotEmpty) return parseId(value.first);
+        if (value is Map) {
+          final candidates = [
+            value['id_mensaje'],
+            value['idMensaje'],
+            value['message_id'],
+            value['id'],
+          ];
+          for (final c in candidates) {
+            final parsed = parseId(c);
+            if (parsed != null) return parsed;
+          }
+          // Fallback: any first primitive value
+          for (final v in value.values) {
+            final parsed = parseId(v);
+            if (parsed != null) return parsed;
+          }
+        }
+        return null;
+      }
+
+      return parseId(res);
+    } catch (e) {
+      debugPrint('enviarMensajeConImagenes -> error: $e');
+      return null;
     }
   }
 
@@ -579,6 +635,47 @@ class SupabaseDataSource {
   /// Obtener creadores por tipo de plan (e.g., "Comunidad", "Fellow")
   /// Intenta primero con la tabla `creadores_por_tipo` y si no existe o falla,
   /// usa el RPC `obtener_creadores_por_tipo(p_tipo)`.
+  Future<List<UsuarioPorTipoModel>> obtenerUsuarioPorTipo(String tipoPlan, {int limit = 50, int offset = 0}) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        return [];
+      }
+
+      // Normalize tipoPlan to expected format if needed (e.g., lowercase)
+      final tipo = tipoPlan.trim();
+
+      final rpcRes = await client.rpc('get_mis_suscriptores_por_tipo', params: {
+        'p_tipo': tipo,
+      });
+      // final rpcRes = await client.rpc('get_creadores_por_tipo', params: {
+      //   'p_tipo': tipo,
+      //   'p_user_id': user.id,
+      // });
+
+      if (rpcRes == null) return [];
+
+      if (rpcRes is List) {
+        return rpcRes.map((e) {
+          final map = normalizeKeys(mapFromDynamic(e));
+          return UsuarioPorTipoModel.fromMap(map);
+        }).toList();
+      }
+
+      if (rpcRes is Map) {
+        final map = normalizeKeys(mapFromDynamic(rpcRes));
+        return [UsuarioPorTipoModel.fromMap(map)];
+      }
+
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Obtener creadores por tipo de plan (e.g., "Comunidad", "Fellow")
+  /// Intenta primero con la tabla `creadores_por_tipo` y si no existe o falla,
+  /// usa el RPC `obtener_creadores_por_tipo(p_tipo)`.
   Future<List<CreatorPorTipoModel>> obtenerCreadoresPorTipo(String tipoPlan, {int limit = 50, int offset = 0}) async {
     try {
       final user = client.auth.currentUser;
@@ -589,9 +686,12 @@ class SupabaseDataSource {
       // Normalize tipoPlan to expected format if needed (e.g., lowercase)
       final tipo = tipoPlan.trim();
 
+      // final rpcRes = await client.rpc('get_mis_suscriptores_por_tipo', params: {
+      //   'p_tipo': tipo,
+      // });
       final rpcRes = await client.rpc('get_creadores_por_tipo', params: {
-        'p_user_id': user.id,
         'p_tipo': tipo,
+        'p_user_id': user.id,
       });
 
       if (rpcRes == null) return [];
@@ -895,6 +995,41 @@ class SupabaseDataSource {
     } catch (e) {
       debugPrint('obtenerTopPagosCreadorMes -> error: $e');
       return [];
+    }
+  }
+
+  /// Sube una imagen al bucket `chat-media` y devuelve una URL pública o firmada.
+  /// pathHint: carpeta lógica (e.g., chatId) para organizar uploads.
+  Future<String?> uploadChatImage({
+    required Uint8List bytes,
+    required String fileName,
+    String? pathHint,
+    String contentType = 'image/jpeg',
+    Duration signedUrlTTL = const Duration(days: 1),
+  }) async {
+    try {
+      final bucket = client.storage.from('chat-media');
+      final objectPath = (pathHint != null && pathHint.isNotEmpty)
+          ? '$pathHint/$fileName'
+          : fileName;
+
+      await bucket.uploadBinary(
+        objectPath,
+        bytes,
+        fileOptions: FileOptions(contentType: contentType, upsert: false),
+      );
+
+      final publicUrl = bucket.getPublicUrl(objectPath);
+      if (publicUrl.isNotEmpty) return publicUrl;
+
+      // Fallback to signed URL if public is not enabled
+      final signed = await bucket.createSignedUrl(objectPath, signedUrlTTL.inSeconds);
+      if (signed.isNotEmpty) return signed;
+
+      return null;
+    } catch (e) {
+      debugPrint('uploadChatImage -> error: $e');
+      return null;
     }
   }
 }

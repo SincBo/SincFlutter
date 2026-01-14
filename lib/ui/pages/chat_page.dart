@@ -1,8 +1,11 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/creator.dart';
 import '../../providers/providers.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   final CreatorEntity creator;
@@ -29,6 +32,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isComposing = false;
+  bool _sendingImage = false;
 
   bool get _isCommunityChat {
     final cat = widget.creator.categoria?.toLowerCase() ?? '';
@@ -153,6 +157,74 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando mensaje: $e')));
       }
+    }
+  }
+
+  Future<void> _pickAndSendImage() async {
+    // Only block community input for non-creators
+    final isCreatorSelf = _isCurrentUserCreator(ref);
+    if (_isCommunityChat && !isCreatorSelf) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('En Comunidad solo el creador puede enviar imágenes')));
+      return;
+    }
+    if (widget.chatId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chat no inicializado')));
+      return;
+    }
+
+    try {
+      setState(() => _sendingImage = true);
+      final picker = ImagePicker();
+      final XFile? file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (file == null) { setState(() => _sendingImage = false); return; }
+
+      final Uint8List bytes = await file.readAsBytes();
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+
+      final ds = ref.read(supabaseDataSourceProvider);
+      final url = await ds.uploadChatImage(bytes: bytes, fileName: fileName, pathHint: widget.chatId ?? widget.creator.idUsuario ?? 'chat');
+
+      if (url == null || url.isEmpty) {
+        throw Exception('No se pudo obtener URL de la imagen subida');
+      }
+
+      await _sendImageMessage([url]);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando imagen: $e')));
+    } finally {
+      if (mounted) setState(() => _sendingImage = false);
+    }
+  }
+
+  Future<void> _sendImageMessage(List<String> urls) async {
+    if (widget.chatId == null || urls.isEmpty) return;
+
+    // optimistic local bubble with placeholder text
+    final msg = ChatMessage(
+      id: '${DateTime.now().millisecondsSinceEpoch}_img',
+      text: '[Imagen enviada]',
+      timestamp: DateTime.now(),
+      fromMe: true,
+    );
+    setState(() => _localOutgoing.add(msg));
+    _scrollToBottom();
+
+    try {
+      // Prefer repository method with images; fallback to sending the URL as text if not available
+      final repo = ref.read(creatorRepositoryProvider);
+      bool ok = false;
+      try {
+        final id = await repo.enviarMensajeConImagenes(widget.chatId!, '', urls);
+        ok = id != null && id.isNotEmpty;
+      } catch (_) {
+        // Fallback: send the first URL as text
+        ok = await repo.enviarMensaje(widget.chatId!, urls.first);
+      }
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo enviar la imagen')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando imagen: $e')));
     }
   }
 
@@ -341,6 +413,14 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   child: Row(
                     children: [
                       IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
+                      // New: image picker button (disabled while uploading)
+                      IconButton(
+                        onPressed: _sendingImage ? null : _pickAndSendImage,
+                        icon: _sendingImage
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.image_outlined),
+                        tooltip: 'Enviar imagen',
+                      ),
                       Expanded(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 150),

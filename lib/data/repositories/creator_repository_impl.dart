@@ -32,9 +32,9 @@ class CreatorRepositoryImpl implements CreatorRepository {
   }
 
   @override
-  Future<String?> crearChatYParticipantes(String idCreador, String idPlan) async {
+  Future<String?> crearChatYParticipantes(String idCreador, String idPlan, bool isCreator) async {
     try {
-      return await datasource.crearChatYParticipantes(idCreador, idPlan);
+      return await datasource.crearChatYParticipantes(idCreador, idPlan, isCreator);
     } catch (e) {
       // Log and return null on failure
       // In higher layers you might want to surface the error instead
@@ -80,6 +80,16 @@ class CreatorRepositoryImpl implements CreatorRepository {
     } catch (e) {
       debugPrint('CreatorRepositoryImpl.enviarMensaje -> error: $e');
       return false;
+    }
+  }
+
+  @override
+  Future<String?> enviarMensajeConImagenes(String idChat, String texto, List<String> imageUrls) async {
+    try {
+      return await datasource.enviarMensajeConImagenes(chatId: idChat, text: texto, imageUrls: imageUrls);
+    } catch (e) {
+      debugPrint('CreatorRepositoryImpl.enviarMensajeConImagenes -> error: $e');
+      return null;
     }
   }
 

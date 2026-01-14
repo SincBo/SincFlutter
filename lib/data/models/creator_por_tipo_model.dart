@@ -45,7 +45,7 @@ class CreatorPorTipoModel extends CreatorPorTipoEntity {
   Map<String, dynamic> toMap() {
     return {
       'id_creador': idCreador,
-      'id_plan': idCreador,
+      'id_plan': idPlan,
       'nombre_creador': nombreCreador,
       'bio': bio,
       'precio_plan': precioPlan,
