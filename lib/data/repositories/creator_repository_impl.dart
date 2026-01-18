@@ -52,6 +52,12 @@ class CreatorRepositoryImpl implements CreatorRepository {
       idRemitente: m.idRemitente,
       contenido: m.contenido,
       fechaEnvio: m.fechaEnvio,
+      multimedia: m.multimedia.map((mm) => MensajeMultimediaEntity(
+        id: mm.id,
+        tipo: mm.tipo,
+        url: mm.url,
+        createdAt: mm.createdAt,
+      )).toList(),
     )).toList();
   }
 
@@ -66,6 +72,7 @@ class CreatorRepositoryImpl implements CreatorRepository {
         idRemitente: model.idRemitente,
         contenido: model.contenido,
         fechaEnvio: model.fechaEnvio,
+        multimedia: const [],
       );
     } catch (e) {
       debugPrint('CreatorRepositoryImpl.insertarMensaje -> error: $e');

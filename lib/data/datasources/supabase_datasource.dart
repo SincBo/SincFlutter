@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
@@ -327,26 +325,38 @@ class SupabaseDataSource {
   /// Fetch messages for a chat (ordered ascending by fecha_envio)
   Future<List<MessageModel>> obtenerMensajes(String idChat) async {
     try {
-      // Supabase Dart: use named parameter `ascending: true` to order ascending
-      final res = await client.from('mensaje').select().eq('id_chat', idChat).order('fecha_envio', ascending: true);
+      final res = await client
+          .from('mensaje')
+          .select('*, mensaje_multimedia ( id_mensaje_multimedia, tipo, url, created_at )')
+          .eq('id_chat', idChat)
+          .order('fecha_envio', ascending: false);
 
-      List<dynamic> list;
-      try {
-        list = List<dynamic>.from(res);
-      } catch (_) {
-        list = <dynamic>[];
-      }
+      final list = List<Map<String, dynamic>>.from(res as List);
 
-      final messages = list.map((e) {
+      return list.map((e) {
         final map = normalizeKeys(mapFromDynamic(e));
-        return MessageModel.fromMap(map);
-      }).toList();
 
-      return messages;
+        // 👇 aquí viene el array de adjuntos
+        final mediaRaw = (map['mensaje_multimedia'] as List?) ?? const [];
+        final media = mediaRaw
+            .map((m) => MensajeMultimediaModel.fromMap(normalizeKeys(mapFromDynamic(m))))
+            .toList();
+
+        final base = MessageModel.fromMap(map);
+        return MessageModel(
+          idMensaje: base.idMensaje,
+          idChat: base.idChat,
+          idRemitente: base.idRemitente,
+          contenido: base.contenido,
+          fechaEnvio: base.fechaEnvio,
+          multimedia: media,
+        );
+      }).toList();
     } catch (e) {
       return [];
     }
   }
+
 
   /// Insert a message into `mensaje` table returning the created row as MessageModel
   Future<MessageModel?> insertarMensaje(String idChat, String contenido) async {
@@ -861,7 +871,7 @@ class SupabaseDataSource {
           'id_usuario': user.id,
           'nombre_usuario': nombreUsuario,
           'email': email,
-          // 'contraseña': password, // ⚠️ Evitar en producción
+          // 'contraseña': password, // ⚠️ Evitar in producción
           'es_creador': esCreador,
         });
       } catch (e) {
@@ -1005,7 +1015,7 @@ class SupabaseDataSource {
     required String fileName,
     String? pathHint,
     String contentType = 'image/jpeg',
-    Duration signedUrlTTL = const Duration(days: 1),
+    Duration signedUrlTTL = const Duration(days: 7),
   }) async {
     try {
       final bucket = client.storage.from('chat-media');
@@ -1019,12 +1029,17 @@ class SupabaseDataSource {
         fileOptions: FileOptions(contentType: contentType, upsert: false),
       );
 
+      // Prefer signed URL to work for private buckets
+      try {
+        final signed = await bucket.createSignedUrl(objectPath, signedUrlTTL.inSeconds);
+        if (signed.isNotEmpty) return signed;
+      } catch (_) {
+        // ignore and try public url
+      }
+
+      // Fallback to public URL (if bucket is public)
       final publicUrl = bucket.getPublicUrl(objectPath);
       if (publicUrl.isNotEmpty) return publicUrl;
-
-      // Fallback to signed URL if public is not enabled
-      final signed = await bucket.createSignedUrl(objectPath, signedUrlTTL.inSeconds);
-      if (signed.isNotEmpty) return signed;
 
       return null;
     } catch (e) {

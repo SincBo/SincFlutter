@@ -4,6 +4,8 @@ class MessageEntity {
   final String idRemitente;
   final String contenido;
   final String? fechaEnvio;
+  final List<MensajeMultimediaEntity> multimedia;
+
 
   MessageEntity({
     this.idMensaje,
@@ -11,6 +13,7 @@ class MessageEntity {
     required this.idRemitente,
     required this.contenido,
     this.fechaEnvio,
+    this.multimedia = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -24,3 +27,17 @@ class MessageEntity {
   }
 }
 
+
+class MensajeMultimediaEntity {
+  final String id;
+  final String tipo; // 'imagen' | 'video'
+  final String url;  // puede ser url pública o path storage
+  final String? createdAt;
+
+  MensajeMultimediaEntity({
+    required this.id,
+    required this.tipo,
+    required this.url,
+    this.createdAt,
+  });
+}

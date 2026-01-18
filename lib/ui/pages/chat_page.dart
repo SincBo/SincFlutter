@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/creator.dart';
 import '../../providers/providers.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   final CreatorEntity creator;
@@ -22,8 +21,17 @@ class ChatMessage {
   final String text;
   final DateTime timestamp;
   final bool fromMe; // true = outgoing
+  final List<String> images; // new: multimedia images URLs
 
-  ChatMessage({required this.id, required this.text, required this.timestamp, required this.fromMe});
+  ChatMessage({
+    required this.id,
+    required this.text,
+    required this.timestamp,
+    required this.fromMe,
+    this.images = const [],
+  });
+
+  bool get hasImages => images.isNotEmpty;
 }
 
 class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver {
@@ -182,7 +190,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
 
       final ds = ref.read(supabaseDataSourceProvider);
-      final url = await ds.uploadChatImage(bytes: bytes, fileName: fileName, pathHint: widget.chatId ?? widget.creator.idUsuario ?? 'chat');
+      final url = await ds.uploadChatImage(bytes: bytes, fileName: fileName, pathHint: widget.chatId ?? widget.creator.idUsuario);
 
       if (url == null || url.isEmpty) {
         throw Exception('No se pudo obtener URL de la imagen subida');
@@ -199,25 +207,28 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   Future<void> _sendImageMessage(List<String> urls) async {
     if (widget.chatId == null || urls.isEmpty) return;
 
-    // optimistic local bubble with placeholder text
-    final msg = ChatMessage(
-      id: '${DateTime.now().millisecondsSinceEpoch}_img',
-      text: '[Imagen enviada]',
-      timestamp: DateTime.now(),
-      fromMe: true,
-    );
-    setState(() => _localOutgoing.add(msg));
+    // optimistic local bubbles per image URL
+    final now = DateTime.now();
+    setState(() {
+      for (final u in urls) {
+        _localOutgoing.add(ChatMessage(
+          id: '${DateTime.now().millisecondsSinceEpoch}_img',
+          text: u, // use URL so it renders immediately
+          timestamp: now,
+          fromMe: true,
+        ));
+      }
+    });
     _scrollToBottom();
 
     try {
-      // Prefer repository method with images; fallback to sending the URL as text if not available
+      // Prefer repository method with images; fallback to sending the first URL as text
       final repo = ref.read(creatorRepositoryProvider);
       bool ok = false;
       try {
         final id = await repo.enviarMensajeConImagenes(widget.chatId!, '', urls);
         ok = id != null && id.isNotEmpty;
       } catch (_) {
-        // Fallback: send the first URL as text
         ok = await repo.enviarMensaje(widget.chatId!, urls.first);
       }
       if (!ok) {
@@ -228,11 +239,88 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
     }
   }
 
+  // Helper to detect image URLs (basic heuristics)
+  bool _isImageUrl(String s) {
+    final u = s.trim().toLowerCase();
+    if (!u.startsWith('http')) return false;
+    return u.endsWith('.png') ||
+        u.endsWith('.jpg') ||
+        u.endsWith('.jpeg') ||
+        u.endsWith('.gif') ||
+        u.contains('image=') || // handles signed URLs with query
+        u.contains('content-type=image');
+  }
+
+  // Simple widget to render 1..N images as a grid (uses 1 image aspectRatio, otherwise 2-col grid)
+  Widget _imagesWidget(List<String> urls) {
+    if (urls.isEmpty) return const SizedBox.shrink();
+    if (urls.length == 1) {
+      final u = urls.first;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(
+          aspectRatio: 4 / 3,
+          child: Image.network(
+            u,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return Center(
+                child: CircularProgressIndicator(
+                  value: progress.expectedTotalBytes != null
+                      ? (progress.cumulativeBytesLoaded / (progress.expectedTotalBytes!))
+                      : null,
+                ),
+              );
+            },
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.black12,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image, size: 32),
+            ),
+          ),
+        ),
+      );
+    }
+    // multiple images -> grid
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: urls.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: 1,
+        ),
+        itemBuilder: (context, i) {
+          final u = urls[i];
+          return Container(
+            color: Colors.black12,
+            child: Image.network(
+              u,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(ChatMessage m) {
     const radius = Radius.circular(14);
     final align = m.fromMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final bgColor = m.fromMe ? Theme.of(context).colorScheme.primary : Colors.grey[200];
     final textColor = m.fromMe ? Colors.white : Colors.black87;
+
+    // decide if we show images: either explicit images list or text is image URL
+    final isImgText = _isImageUrl(m.text);
+    final showImages = m.hasImages || isImgText;
+    final images = m.hasImages ? m.images : (isImgText ? [m.text] : const <String>[]);
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
@@ -245,7 +333,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
               if (!m.fromMe) ...[
                 CircleAvatar(
                   radius: 16,
-                  backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                   child: Text(widget.creator.nombreUsuario.isNotEmpty
                       ? widget.creator.nombreUsuario[0].toUpperCase()
                       : '?'),
@@ -259,9 +347,12 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mensaje copiado')));
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    width: showImages ? screenWidth * 0.8 : null,
+                    padding: showImages ? const EdgeInsets.all(6) : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: bgColor,
+                      color: showImages
+                          ? (m.fromMe ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12) : Colors.grey[100])
+                          : bgColor,
                       borderRadius: BorderRadius.only(
                         topLeft: m.fromMe ? radius : Radius.zero,
                         topRight: m.fromMe ? Radius.zero : radius,
@@ -272,14 +363,20 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          m.text,
-                          style: TextStyle(color: textColor),
-                        ),
+                        if (showImages)
+                          _imagesWidget(images)
+                        else
+                          Text(
+                            m.text,
+                            style: TextStyle(color: textColor),
+                          ),
                         const SizedBox(height: 6),
                         Text(
                           _formatTime(m.timestamp),
-                          style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 11),
+                          style: TextStyle(
+                            color: (showImages ? Colors.black54 : textColor.withValues(alpha: 0.7)),
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -342,7 +439,18 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 ts = DateTime.now();
               }
               final isFromMe = authState.when(data: (u) => u?.id == e.idRemitente, loading: () => false, error: (_, __) => false);
-              return ChatMessage(id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(), text: e.contenido, timestamp: ts, fromMe: isFromMe);
+              // FIX: extract URL from each MensajeMultimediaEntity
+              final imgs = e.multimedia
+                  .map((mm) => mm.url)
+                  .where((u) => u.trim().isNotEmpty)
+                  .toList();
+              return ChatMessage(
+                id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                text: e.contenido,
+                timestamp: ts,
+                fromMe: isFromMe,
+                images: imgs,
+              );
             }).toList();
 
             // Community mode: only show creator messages (not fromMe) for non-creators
@@ -376,7 +484,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
           title: Row(
             children: [
               CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.14),
+                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
                 child: Text(widget.creator.nombreUsuario.isNotEmpty ? widget.creator.nombreUsuario[0].toUpperCase() : '?'),
               ),
               const SizedBox(width: 12),
@@ -386,12 +494,12 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   children: [
                     Text(widget.creator.nombreUsuario, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text('En línea', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.85))),
+                    Text('En línea', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.85))),
                   ],
                 ),
               ),
-              IconButton(onPressed: () {}, icon: const Icon(Icons.call)),
-              IconButton(onPressed: () {}, icon: const Icon(Icons.more_vert)),
+              // IconButton(onPressed: () {}, icon: const Icon(Icons.call)),
+              // IconButton(onPressed: () {}, icon: const Icon(Icons.more_vert)),
             ],
           ),
         ),
