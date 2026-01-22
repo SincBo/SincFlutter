@@ -52,7 +52,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
         return creatorsAsync.when(
           data: (creators) {
-            final isCreator = user != null && creators.any((c) => c.idUsuario == user.id);
+            final isCreator = user!.esCreador || false;
 
             // Defer counts load until after first build to avoid build-time async
             WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/providers.dart';
 import '../../../data/models/ganancias_mes_model.dart';
 import '../../../data/models/top_pago_mes_model.dart';
+import '../profile/profile_page.dart';
 
 class GananciasPage extends ConsumerWidget {
   final String? creadorId;
@@ -89,17 +90,33 @@ class GananciasPage extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Ganancias', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircleAvatar(
-                              radius: 22,
-                              backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
-                              child: Icon(Icons.person, color: theme.colorScheme.primary),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text('Perfil', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == 'logout') {
+                              // Sign out via the auth notifier
+                              ref.read(authNotifierProvider.notifier).signOut();
+                            } else if (value == 'perfil') {
+                              // Navigate to ProfilePage
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const ProfilePage()),
+                              );
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'perfil', child: Text('Perfil')),
+                            const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
                           ],
+                          child: Column(
+                            children: [
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text('Perfil', style: TextStyle(fontSize: 12)),
+                            ],
+                          ),
                         ),
                       ],
                     ),

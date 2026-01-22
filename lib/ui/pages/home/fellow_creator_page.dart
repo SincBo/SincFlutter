@@ -6,6 +6,7 @@ import '../../../providers/providers.dart';
 import '../../../data/models/creator_por_tipo_model.dart';
 import '../../../domain/entities/creator.dart';
 import '../chat_page.dart';
+import '../profile/profile_page.dart';
 
 class FellowCreatorPage extends ConsumerStatefulWidget {
   const FellowCreatorPage({Key? key}) : super(key: key);
@@ -88,16 +89,33 @@ class _FellowPageState extends ConsumerState<FellowCreatorPage> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Fellow', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                      child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text('Perfil', style: TextStyle(fontSize: 12)),
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'logout') {
+                      // Sign out via the auth notifier
+                      ref.read(authNotifierProvider.notifier).signOut();
+                    } else if (value == 'perfil') {
+                      // Navigate to ProfilePage
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfilePage()),
+                      );
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'perfil', child: Text('Perfil')),
+                    const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
                   ],
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text('Perfil', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
                 ),
               ],
             ),

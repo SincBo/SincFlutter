@@ -21,17 +21,30 @@ class SupabaseDataSource {
     final res = await client.auth.signInWithPassword(email: email, password: password);
     final user = res.user;
     if (user == null) return null;
-    return UserModel.fromUser(user);
+    // 🔥 CONSULTA A TU TABLA usuario
+    final profile = await client
+        .from('usuario')
+        .select('id_usuario, email, nombre_usuario, es_creador')
+        .eq('id_usuario', user.id)
+        .single();
+    return UserModel.fromAuthAndProfile(user, profile);
   }
 
   Future<void> signOut() async {
     await client.auth.signOut();
   }
 
-  UserModel? getCurrentUser() {
+  Future<UserModel?> getCurrentUser() async {
     final user = client.auth.currentUser;
     if (user == null) return null;
-    return UserModel.fromUser(user);
+    // 🔥 CONSULTA A TU TABLA usuario
+    final profile = await client
+        .from('usuario')
+        .select('id_usuario, email, nombre_usuario, es_creador')
+        .eq('id_usuario', user.id)
+        .single();
+    return UserModel.fromAuthAndProfile(user, profile);
+    // return UserModel.fromUser(user);
   }
 
   Future<List<CreatorModel>> obtenerCreadores() async {

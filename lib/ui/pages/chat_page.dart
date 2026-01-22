@@ -58,7 +58,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   bool _isCurrentUserCreator(WidgetRef ref) {
     final authUser = ref.read(authNotifierProvider).maybeWhen(data: (u) => u, orElse: () => null);
     if (authUser == null) return false;
-    return authUser.id == widget.creator.idUsuario;
+    return authUser.esCreador;
   }
 
   @override
@@ -521,14 +521,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   child: Row(
                     children: [
                       IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
-                      // New: image picker button (disabled while uploading)
-                      IconButton(
-                        onPressed: _sendingImage ? null : _pickAndSendImage,
-                        icon: _sendingImage
-                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.image_outlined),
-                        tooltip: 'Enviar imagen',
-                      ),
+                      // New: image picker button visible only for creator users
+                      if (_isCurrentUserCreator(ref))
+                        IconButton(
+                          onPressed: _sendingImage ? null : _pickAndSendImage,
+                          icon: _sendingImage
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.image_outlined),
+                          tooltip: 'Enviar imagen',
+                        ),
                       Expanded(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 150),

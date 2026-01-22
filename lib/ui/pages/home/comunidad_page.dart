@@ -6,6 +6,7 @@ import '../../../providers/providers.dart';
 import '../../../domain/entities/creator.dart';
 import '../../widgets/search_bar.dart';
 import '../creator_wall_page.dart';
+import '../profile/profile_page.dart';
 
 class ComunidadPage extends ConsumerStatefulWidget {
   const ComunidadPage({Key? key}) : super(key: key);
@@ -159,8 +160,10 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                       // Sign out via the auth notifier
                       ref.read(authNotifierProvider.notifier).signOut();
                     } else if (value == 'perfil') {
-                      // Placeholder: could navigate to profile page later
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Abrir perfil')));
+                      // Navigate to ProfilePage
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfilePage()),
+                      );
                     }
                   },
                   itemBuilder: (context) => [
