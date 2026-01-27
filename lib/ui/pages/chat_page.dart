@@ -1,3 +1,4 @@
+
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -136,11 +137,13 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
     } else {
       setState(() {
         _messages.insert(0, msg); // insert at top because list is reversed
+        _messages.add(msg); // append at end so it appears at bottom
         _isComposing = false;
       });
     }
 
     _controller.clear();
+    _scrollToBottom();
     _scrollToBottom();
 
     // Simulate a short reply from creator in demo mode
@@ -153,6 +156,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
           fromMe: false,
         );
         setState(() => _messages.insert(0, reply));
+        setState(() => _messages.add(reply));
         _scrollToBottom();
       });
     } else {
@@ -463,9 +467,12 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 ? backend
                 : (List<ChatMessage>.from(backend)..addAll(_localOutgoing));
 
+            // Ensure reverse chronological order: newest at top, oldest at bottom
+            combined.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
             return ListView.builder(
               controller: _scrollController,
-              reverse: true,
+              reverse: false,
               padding: const EdgeInsets.only(top: 12, bottom: 12),
               itemCount: combined.length,
               itemBuilder: (context, index) {
@@ -520,7 +527,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Row(
                     children: [
-                      IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
+                      // IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined)),
                       // New: image picker button visible only for creator users
                       if (_isCurrentUserCreator(ref))
                         IconButton(
