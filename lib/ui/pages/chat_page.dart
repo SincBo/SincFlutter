@@ -1,4 +1,3 @@
-
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,6 +41,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   final ScrollController _scrollController = ScrollController();
   bool _isComposing = false;
   bool _sendingImage = false;
+  bool _pendingAutoScroll = false;
 
   bool get _isCommunityChat {
     final cat = widget.creator.categoria?.toLowerCase() ?? '';
@@ -104,13 +104,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
+    if (!_scrollController.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
-        0.0,
+        _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
-    }
+    });
   }
 
   Future<void> _handleSubmitted(String text) async {
@@ -131,19 +133,19 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
     if (widget.chatId != null) {
       // optimistic local append; will be merged with provider messages in the UI
       setState(() {
-        _localOutgoing.add(msg);
+        // _localOutgoing.add(msg);
         _isComposing = false;
+        _pendingAutoScroll = true;
       });
     } else {
       setState(() {
-        _messages.insert(0, msg); // insert at top because list is reversed
         _messages.add(msg); // append at end so it appears at bottom
         _isComposing = false;
+        _pendingAutoScroll = true;
       });
     }
 
     _controller.clear();
-    _scrollToBottom();
     _scrollToBottom();
 
     // Simulate a short reply from creator in demo mode
@@ -155,8 +157,10 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
           timestamp: DateTime.now(),
           fromMe: false,
         );
-        setState(() => _messages.insert(0, reply));
-        setState(() => _messages.add(reply));
+        setState(() {
+          _messages.add(reply);
+          _pendingAutoScroll = true;
+        });
         _scrollToBottom();
       });
     } else {
@@ -165,6 +169,8 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         final success = await ref.read(creatorRepositoryProvider).enviarMensaje(widget.chatId!, text.trim());
         if (!success) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error enviando mensaje')));
+        } else {
+          ref.invalidate(messagesProvider(widget.chatId!));
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando mensaje: $e')));
@@ -222,6 +228,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
           fromMe: true,
         ));
       }
+      _pendingAutoScroll = true;
     });
     _scrollToBottom();
 
@@ -237,6 +244,8 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
       }
       if (!ok) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo enviar la imagen')));
+      } else {
+        ref.invalidate(messagesProvider(widget.chatId!));
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando imagen: $e')));
@@ -420,7 +429,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
               : _messages;
           return ListView.builder(
             controller: _scrollController,
-            reverse: true,
+            reverse: false,
             padding: const EdgeInsets.only(top: 12, bottom: 12),
             itemCount: source.length,
             itemBuilder: (context, index) {
@@ -448,6 +457,8 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   .map((mm) => mm.url)
                   .where((u) => u.trim().isNotEmpty)
                   .toList();
+
+              _scrollToBottom();
               return ChatMessage(
                 id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(),
                 text: e.contenido,
@@ -456,6 +467,27 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 images: imgs,
               );
             }).toList();
+
+            // Drop local optimistic messages once backend contains the same message
+            final now = DateTime.now();
+            final matchedLocalIds = <String>{};
+            for (final local in _localOutgoing) {
+              final match = backendAll.any((b) {
+                if (b.fromMe != local.fromMe) return false;
+                if (b.text != local.text) return false;
+                final diff = b.timestamp.difference(local.timestamp).inSeconds.abs();
+                return diff <= 15; // tolerate server timestamp skew
+              });
+              if (match) matchedLocalIds.add(local.id);
+            }
+            if (matchedLocalIds.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() {
+                  _localOutgoing.removeWhere((m) => matchedLocalIds.contains(m.id));
+                });
+              });
+            }
 
             // Community mode: only show creator messages (not fromMe) for non-creators
             final backend = (_isCommunityChat && !_isCurrentUserCreator(ref))
@@ -467,8 +499,16 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                 ? backend
                 : (List<ChatMessage>.from(backend)..addAll(_localOutgoing));
 
-            // Ensure reverse chronological order: newest at top, oldest at bottom
+            // Keep chronological order: oldest at top, newest at bottom
             combined.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+            if (_pendingAutoScroll) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                _scrollToBottom();
+                setState(() => _pendingAutoScroll = false);
+              });
+            }
 
             return ListView.builder(
               controller: _scrollController,
