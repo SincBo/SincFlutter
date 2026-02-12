@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/creator.dart';
 import '../../providers/providers.dart';
 import 'package:image_picker/image_picker.dart';
@@ -42,6 +43,10 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   bool _isComposing = false;
   bool _sendingImage = false;
   bool _pendingAutoScroll = false;
+  bool autoScrollSendMessage = false;
+  int numberMessage = 0;
+  int numberMessageTemp = 0;
+  RealtimeChannel? _realtimeChannel;
 
   bool get _isCommunityChat {
     final cat = widget.creator.categoria?.toLowerCase() ?? '';
@@ -92,11 +97,17 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
     }
 
     // Scroll to bottom after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+      if (widget.chatId != null) {
+        _subscribeRealtime(); // 👈 AQUI
+      }
+    });
   }
 
   @override
   void dispose() {
+    _realtimeChannel?.unsubscribe(); // 👈 MUY IMPORTANTE
     WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _scrollController.dispose();
@@ -104,11 +115,16 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   }
 
   void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+      if (!_scrollController.hasClients) {
+        // Retry once the ListView is attached.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+        return;
+      }
+      final position = _scrollController.position;
+      if (!position.hasPixels) return;
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+        position.maxScrollExtent,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -147,6 +163,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
 
     _controller.clear();
     _scrollToBottom();
+    numberMessageTemp = numberMessage + 1;
 
     // Simulate a short reply from creator in demo mode
     if (widget.chatId == null) {
@@ -171,6 +188,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error enviando mensaje')));
         } else {
           ref.invalidate(messagesProvider(widget.chatId!));
+          autoScrollSendMessage = true;
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error enviando mensaje: $e')));
@@ -458,7 +476,6 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   .where((u) => u.trim().isNotEmpty)
                   .toList();
 
-              _scrollToBottom();
               return ChatMessage(
                 id: e.idMensaje ?? DateTime.now().millisecondsSinceEpoch.toString(),
                 text: e.contenido,
@@ -506,9 +523,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
                 _scrollToBottom();
-                setState(() => _pendingAutoScroll = false);
+                if(numberMessage > numberMessageTemp) {
+                  setState(() => _pendingAutoScroll = false);
+                  numberMessageTemp = 0;
+                  numberMessage = 0;
+                }
               });
             }
+
+            numberMessage = list.length;
 
             return ListView.builder(
               controller: _scrollController,
@@ -618,5 +641,34 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         ),
       );
     });
+  }
+
+  void _subscribeRealtime() {
+    if (widget.chatId == null) return;
+
+    final supabase = ref.read(supabaseClientProvider);
+
+    _realtimeChannel = supabase
+        .channel('chat:${widget.chatId}')
+        .onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'mensaje',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'id_chat',
+        value: widget.chatId!,
+      ),
+      callback: (payload) {
+        debugPrint('📩 Nuevo mensaje realtime: ${payload.newRecord}');
+
+        // 🔥 refresca mensajes
+        ref.invalidate(messagesProvider(widget.chatId!));
+
+        // autoscroll
+        _pendingAutoScroll = true;
+      },
+    )
+        .subscribe();
   }
 }

@@ -3,8 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
 
-class LoginPage extends ConsumerWidget {
+class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
+
+  @override
+  ConsumerState<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends ConsumerState<LoginPage> {
+  bool _isGoogleLoading = false;
 
   void _showSignInSheet(BuildContext context) {
     showModalBottomSheet(
@@ -20,22 +27,32 @@ class LoginPage extends ConsumerWidget {
     );
   }
 
-  void _showSignUpSheet(BuildContext context) {
+  void _showSignUpSheet(BuildContext context, {
+    String? prefilledNombre,
+    String? prefilledApellido,
+    String? prefilledEmail,
+    bool isOAuthSignup = false,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => const Padding(
-        padding: EdgeInsets.only(top: 8.0),
-        child: SignUpSheet(),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.only(top: 8.0),
+        child: SignUpSheet(
+          prefilledNombre: prefilledNombre,
+          prefilledApellido: prefilledApellido,
+          prefilledEmail: prefilledEmail,
+          isOAuthSignup: isOAuthSignup,
+        ),
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -115,10 +132,81 @@ class LoginPage extends ConsumerWidget {
                           side: BorderSide(color: theme.dividerColor),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        icon: const Icon(Icons.g_translate, color: Colors.red),
-                        label: const Text('Google'),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login con Google')));
+                        icon: _isGoogleLoading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                            )
+                          : const Icon(Icons.g_translate, color: Colors.red),
+                        label: Text(_isGoogleLoading ? 'Cargando...' : 'Google'),
+                        onPressed: _isGoogleLoading ? null : () async {
+                          setState(() => _isGoogleLoading = true);
+
+                          try {
+                            final ds = ref.read(supabaseDataSourceProvider);
+
+                            debugPrint('LoginPage -> Starting Google sign in');
+
+                            // Try to sign in with Google
+                            final user = await ds.signInWithGoogle();
+
+                            debugPrint('LoginPage -> Google sign in result: ${user?.id}');
+
+                            if (user == null) {
+                              if (mounted) {
+                                setState(() => _isGoogleLoading = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No se pudo iniciar sesión con Google')),
+                                );
+                              }
+                              return;
+                            }
+
+                            // Check if user profile exists in our usuario table
+                            final existing = await ds.client
+                                .from('usuario')
+                                .select('id_usuario')
+                                .eq('id_usuario', user.id)
+                                .maybeSingle();
+
+                            debugPrint('LoginPage -> User exists in table: ${existing != null}');
+
+                            if (existing == null && mounted) {
+                              // New user - show registration sheet with prefilled data
+                              setState(() => _isGoogleLoading = false);
+
+                              final authUser = ds.client.auth.currentUser;
+                              if (authUser != null) {
+                                final fullName = authUser.userMetadata?['full_name'] ??
+                                                 authUser.userMetadata?['name'] ?? '';
+                                final nameParts = fullName.toString().split(' ');
+                                final nombre = nameParts.isNotEmpty ? nameParts.first : '';
+                                final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+                                _showSignUpSheet(
+                                  context,
+                                  prefilledNombre: nombre,
+                                  prefilledApellido: apellido,
+                                  prefilledEmail: authUser.email ?? '',
+                                  isOAuthSignup: true,
+                                );
+                              }
+                            } else {
+                              // Existing user - update auth state
+                              debugPrint('LoginPage -> Updating auth state for existing user');
+                              await ref.read(authNotifierProvider.notifier).signInWithGoogle();
+                              if (mounted) setState(() => _isGoogleLoading = false);
+                            }
+                          } catch (e) {
+                            debugPrint('LoginPage -> Google sign in error: $e');
+                            if (mounted) {
+                              setState(() => _isGoogleLoading = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error con Google: $e')),
+                              );
+                            }
+                          }
                         },
                       ),
                     ),
@@ -278,7 +366,18 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
 }
 
 class SignUpSheet extends ConsumerStatefulWidget {
-  const SignUpSheet({Key? key}) : super(key: key);
+  final String? prefilledNombre;
+  final String? prefilledApellido;
+  final String? prefilledEmail;
+  final bool isOAuthSignup;
+
+  const SignUpSheet({
+    Key? key,
+    this.prefilledNombre,
+    this.prefilledApellido,
+    this.prefilledEmail,
+    this.isOAuthSignup = false,
+  }) : super(key: key);
 
   @override
   ConsumerState<SignUpSheet> createState() => _SignUpSheetState();
@@ -293,6 +392,21 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
   final _codigoInvController = TextEditingController();
   bool _esCreador = false;
   bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill controllers if data is provided from OAuth
+    if (widget.prefilledNombre != null) {
+      _nombreController.text = widget.prefilledNombre!;
+    }
+    if (widget.prefilledApellido != null) {
+      _apellidoController.text = widget.prefilledApellido!;
+    }
+    if (widget.prefilledEmail != null) {
+      _emailController.text = widget.prefilledEmail!;
+    }
+  }
 
   @override
   void dispose() {
@@ -315,31 +429,75 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
     final password = _passwordController.text;
     final codigoInv = _codigoInvController.text.trim();
 
-    if (nombre.isEmpty || apellido.isEmpty || email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Complete nombre, apellido, correo y contraseña')));
+    // Validación básica
+    if (nombre.isEmpty || apellido.isEmpty || email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Complete nombre, apellido y correo')),
+      );
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
+    // Si no es OAuth, validar contraseña
+    if (!widget.isOAuthSignup && password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La contraseña es requerida')),
+      );
       setState(() => _isSubmitting = false);
       return;
     }
 
     final nombreUsuario = '$nombre $apellido'.trim();
     final ds = ref.read(supabaseDataSourceProvider);
+
     try {
-      final user = await ds.signUpWithEmail(email: email, password: password, nombreUsuario: nombreUsuario, esCreador: _esCreador);
-      if (user != null) {
-        try {
-          await ds.client.from('Usuario').update({
-            'telefono': telefono,
+      if (widget.isOAuthSignup) {
+        // Usuario viene de OAuth (Google/Facebook), ya está autenticado
+        // Solo necesitamos crear el registro en la tabla usuario
+        final user = ds.client.auth.currentUser;
+        if (user != null) {
+          await ds.client.from('usuario').insert({
+            'id_usuario': user.id,
+            'nombre_usuario': nombreUsuario,
+            'email': email,
+            'telefono': telefono.isNotEmpty ? telefono : null,
             'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
-          }).eq('id_usuario', user.id);
-        } catch (_) {}
-        // Auto-login so user enters the app immediately
-        await ref.read(authNotifierProvider.notifier).signIn(email, password);
+            'es_creador': _esCreador,
+          });
+
+          // Refresh auth state to load the new user profile
+          await ref.read(authNotifierProvider.notifier).signInWithGoogle();
+        }
       } else {
-        // If sign-up requires email confirmation, try login anyway; Supabase will error until confirmed
-        await ref.read(authNotifierProvider.notifier).signIn(email, password);
+        // Registro tradicional con email y contraseña
+        final user = await ds.signUpWithEmail(
+          email: email,
+          password: password,
+          nombreUsuario: nombreUsuario,
+          esCreador: _esCreador,
+        );
+
+        if (user != null) {
+          try {
+            await ds.client.from('usuario').update({
+              'telefono': telefono.isNotEmpty ? telefono : null,
+              'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
+            }).eq('id_usuario', user.id);
+          } catch (_) {}
+
+          // Auto-login so user enters the app immediately
+          await ref.read(authNotifierProvider.notifier).signIn(email, password);
+        } else {
+          // If sign-up requires email confirmation, try login anyway
+          await ref.read(authNotifierProvider.notifier).signIn(email, password);
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error en registro: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error en registro: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -397,17 +555,20 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
                   TextField(
                     controller: _nombreController,
                     decoration: const InputDecoration(labelText: 'Nombre'),
+                    enabled: !widget.isOAuthSignup || widget.prefilledNombre == null,
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _apellidoController,
                     decoration: const InputDecoration(labelText: 'Apellido'),
+                    enabled: !widget.isOAuthSignup || widget.prefilledApellido == null,
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(labelText: 'Correo'),
+                    enabled: !widget.isOAuthSignup || widget.prefilledEmail == null,
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -415,12 +576,15 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(labelText: 'Telefono'),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Contraseña'),
-                  ),
+                  // Solo mostrar contraseña si NO es OAuth signup
+                  if (!widget.isOAuthSignup) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(labelText: 'Contraseña'),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   TextField(
                     controller: _codigoInvController,

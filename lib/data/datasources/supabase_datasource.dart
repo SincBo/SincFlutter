@@ -11,6 +11,7 @@ import '../models/usuario_por_tipo_model.dart';
 import '../utils/safe_map.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
 
 class SupabaseDataSource {
   final SupabaseClient client;
@@ -35,16 +36,98 @@ class SupabaseDataSource {
   }
 
   Future<UserModel?> getCurrentUser() async {
-    final user = client.auth.currentUser;
-    if (user == null) return null;
-    // 🔥 CONSULTA A TU TABLA usuario
-    final profile = await client
-        .from('usuario')
-        .select('id_usuario, email, nombre_usuario, es_creador')
-        .eq('id_usuario', user.id)
-        .single();
-    return UserModel.fromAuthAndProfile(user, profile);
-    // return UserModel.fromUser(user);
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) return null;
+
+      // Intentar obtener el perfil de la tabla usuario
+      final profile = await client
+          .from('usuario')
+          .select('id_usuario, email, nombre_usuario, es_creador')
+          .eq('id_usuario', user.id)
+          .maybeSingle();
+
+      if (profile != null) {
+        return UserModel.fromAuthAndProfile(user, profile);
+      } else {
+        // Si no existe en la tabla, devolver el modelo básico de auth
+        debugPrint('getCurrentUser -> User exists in auth but not in usuario table');
+        return UserModel.fromUser(user);
+      }
+    } catch (e) {
+      debugPrint('getCurrentUser -> error: $e');
+      return null;
+    }
+  }
+
+  /// Inicia sesión con Google OAuth
+  /// No crea automáticamente el usuario en la tabla, solo autentica
+  Future<UserModel?> signInWithGoogle() async {
+    try {
+      // Verificar si ya hay una sesión activa primero
+      final currentUser = client.auth.currentUser;
+      if (currentUser != null) {
+        debugPrint('signInWithGoogle -> User already authenticated: ${currentUser.id}');
+        return UserModel.fromUser(currentUser);
+      }
+
+      debugPrint('signInWithGoogle -> Starting OAuth flow');
+      final res = await client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'com.sincbo.sincboflutter://login-callback',
+      );
+
+      if (!res) {
+        debugPrint('signInWithGoogle -> OAuth flow not started');
+        return null;
+      }
+
+      debugPrint('signInWithGoogle -> OAuth flow started, waiting for auth state change');
+
+      // Esperar a que el auth state cambie (máximo 30 segundos)
+      final user = await _waitForAuthStateChange();
+
+      if (user == null) {
+        debugPrint('signInWithGoogle -> No user after OAuth callback timeout');
+        return null;
+      }
+
+      debugPrint('signInWithGoogle -> User authenticated: ${user.id}');
+      return UserModel.fromUser(user);
+    } catch (e) {
+      debugPrint('signInWithGoogle -> error: $e');
+      rethrow;
+    }
+  }
+
+  /// Espera a que cambie el estado de autenticación después de OAuth
+  Future<User?> _waitForAuthStateChange() async {
+    try {
+      // Esperar hasta 30 segundos para que el usuario complete el OAuth
+      final completer = Completer<User?>();
+
+      final subscription = client.auth.onAuthStateChange.listen((event) {
+        debugPrint('signInWithGoogle -> Auth state changed: ${event.event}');
+        if (event.session?.user != null && !completer.isCompleted) {
+          completer.complete(event.session!.user);
+        }
+      });
+
+      // Timeout de 30 segundos
+      final user = await completer.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('signInWithGoogle -> Timeout waiting for auth state change');
+          return client.auth.currentUser;
+        },
+      );
+
+      await subscription.cancel();
+      return user;
+    } catch (e) {
+      debugPrint('signInWithGoogle -> Error waiting for auth state: $e');
+      return client.auth.currentUser;
+    }
   }
 
   Future<List<CreatorModel>> obtenerCreadores() async {

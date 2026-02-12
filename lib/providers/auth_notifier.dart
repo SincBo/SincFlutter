@@ -29,6 +29,16 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
     }
   }
 
+  Future<void> signInWithGoogle() async {
+    state = const AsyncValue.loading();
+    try {
+      final user = await repository.signInWithGoogle();
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
   Future<void> signOut() async {
     state = const AsyncValue.loading();
     try {
