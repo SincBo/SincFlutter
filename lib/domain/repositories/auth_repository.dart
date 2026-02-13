@@ -7,6 +7,9 @@ abstract class AuthRepository {
   /// Sign in with Google OAuth. Returns a [UserEntity] on success or null on failure.
   Future<UserEntity?> signInWithGoogle();
 
+  /// Sign in with Facebook OAuth. Returns a [UserEntity] on success or null on failure.
+  Future<UserEntity?> signInWithFacebook();
+
   /// Sign out current user.
   Future<void> signOut();
 

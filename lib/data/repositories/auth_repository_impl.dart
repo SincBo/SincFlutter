@@ -18,6 +18,11 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<UserEntity?> signInWithFacebook() async {
+    return await datasource.signInWithFacebook();
+  }
+
+  @override
   Future<UserEntity?> getCurrentUser() async {
     return datasource.getCurrentUser();
   }

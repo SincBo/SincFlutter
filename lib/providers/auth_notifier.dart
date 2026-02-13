@@ -39,6 +39,16 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
     }
   }
 
+  Future<void> signInWithFacebook() async {
+    state = const AsyncValue.loading();
+    try {
+      final user = await repository.signInWithFacebook();
+      state = AsyncValue.data(user);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
   Future<void> signOut() async {
     state = const AsyncValue.loading();
     try {

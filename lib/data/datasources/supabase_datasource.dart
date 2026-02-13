@@ -100,6 +100,46 @@ class SupabaseDataSource {
     }
   }
 
+  /// Inicia sesión con Facebook OAuth
+  /// No crea automáticamente el usuario en la tabla, solo autentica
+  Future<UserModel?> signInWithFacebook() async {
+    try {
+      // Verificar si ya hay una sesión activa primero
+      final currentUser = client.auth.currentUser;
+      if (currentUser != null) {
+        debugPrint('signInWithFacebook -> User already authenticated: ${currentUser.id}');
+        return UserModel.fromUser(currentUser);
+      }
+
+      debugPrint('signInWithFacebook -> Starting OAuth flow');
+      final res = await client.auth.signInWithOAuth(
+        OAuthProvider.facebook,
+        redirectTo: 'com.sincbo.sincboflutter://login-callback',
+      );
+
+      if (!res) {
+        debugPrint('signInWithFacebook -> OAuth flow not started');
+        return null;
+      }
+
+      debugPrint('signInWithFacebook -> OAuth flow started, waiting for auth state change');
+
+      // Esperar a que el auth state cambie (máximo 30 segundos)
+      final user = await _waitForAuthStateChange();
+
+      if (user == null) {
+        debugPrint('signInWithFacebook -> No user after OAuth callback timeout');
+        return null;
+      }
+
+      debugPrint('signInWithFacebook -> User authenticated: ${user.id}');
+      return UserModel.fromUser(user);
+    } catch (e) {
+      debugPrint('signInWithFacebook -> error: $e');
+      rethrow;
+    }
+  }
+
   /// Espera a que cambie el estado de autenticación después de OAuth
   Future<User?> _waitForAuthStateChange() async {
     try {

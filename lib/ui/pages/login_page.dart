@@ -12,6 +12,7 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   bool _isGoogleLoading = false;
+  bool _isFacebookLoading = false;
 
   void _showSignInSheet(BuildContext context) {
     showModalBottomSheet(
@@ -220,10 +221,81 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        icon: const Icon(Icons.facebook),
-                        label: const Text('Facebook'),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login con Facebook')));
+                        icon: _isFacebookLoading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.facebook),
+                        label: Text(_isFacebookLoading ? 'Cargando...' : 'Facebook'),
+                        onPressed: _isFacebookLoading ? null : () async {
+                          setState(() => _isFacebookLoading = true);
+
+                          try {
+                            final ds = ref.read(supabaseDataSourceProvider);
+
+                            debugPrint('LoginPage -> Starting Facebook sign in');
+
+                            // Try to sign in with Facebook
+                            final user = await ds.signInWithFacebook();
+
+                            debugPrint('LoginPage -> Facebook sign in result: ${user?.id}');
+
+                            if (user == null) {
+                              if (mounted) {
+                                setState(() => _isFacebookLoading = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No se pudo iniciar sesión con Facebook')),
+                                );
+                              }
+                              return;
+                            }
+
+                            // Check if user profile exists in our usuario table
+                            final existing = await ds.client
+                                .from('usuario')
+                                .select('id_usuario')
+                                .eq('id_usuario', user.id)
+                                .maybeSingle();
+
+                            debugPrint('LoginPage -> User exists in table: ${existing != null}');
+
+                            if (existing == null && mounted) {
+                              // New user - show registration sheet with prefilled data
+                              setState(() => _isFacebookLoading = false);
+
+                              final authUser = ds.client.auth.currentUser;
+                              if (authUser != null) {
+                                final fullName = authUser.userMetadata?['full_name'] ??
+                                                 authUser.userMetadata?['name'] ?? '';
+                                final nameParts = fullName.toString().split(' ');
+                                final nombre = nameParts.isNotEmpty ? nameParts.first : '';
+                                final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+                                _showSignUpSheet(
+                                  context,
+                                  prefilledNombre: nombre,
+                                  prefilledApellido: apellido,
+                                  prefilledEmail: authUser.email ?? '',
+                                  isOAuthSignup: true,
+                                );
+                              }
+                            } else {
+                              // Existing user - update auth state
+                              debugPrint('LoginPage -> Updating auth state for existing user');
+                              await ref.read(authNotifierProvider.notifier).signInWithFacebook();
+                              if (mounted) setState(() => _isFacebookLoading = false);
+                            }
+                          } catch (e) {
+                            debugPrint('LoginPage -> Facebook sign in error: $e');
+                            if (mounted) {
+                              setState(() => _isFacebookLoading = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error con Facebook: $e')),
+                              );
+                            }
+                          }
                         },
                       ),
                     ),
@@ -460,8 +532,8 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
             'id_usuario': user.id,
             'nombre_usuario': nombreUsuario,
             'email': email,
-            'telefono': telefono.isNotEmpty ? telefono : null,
-            'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
+            // 'telefono': telefono.isNotEmpty ? telefono : null,
+            // 'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
             'es_creador': _esCreador,
           });
 
