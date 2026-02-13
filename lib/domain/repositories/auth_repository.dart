@@ -13,6 +13,9 @@ abstract class AuthRepository {
   /// Sign out current user.
   Future<void> signOut();
 
+  /// Change password for current user.
+  Future<void> changePassword({required String newPassword});
+
   /// Returns the currently signed in user or null.
   Future<UserEntity?> getCurrentUser();
 }

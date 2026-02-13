@@ -58,4 +58,12 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
       state = AsyncValue.error(e, st);
     }
   }
+
+  Future<void> changePassword({required String newPassword}) async {
+    try {
+      await repository.changePassword(newPassword: newPassword);
+    } catch (e, st) {
+      rethrow;
+    }
+  }
 }

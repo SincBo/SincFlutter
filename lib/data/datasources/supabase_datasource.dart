@@ -35,6 +35,33 @@ class SupabaseDataSource {
     await client.auth.signOut();
   }
 
+  /// Cambia la contraseña del usuario actual
+  /// Solo requiere la nueva contraseña ya que el usuario está autenticado
+  Future<void> changePassword({required String newPassword}) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        throw Exception('No hay usuario autenticado');
+      }
+
+      debugPrint('changePassword -> Updating password for user: ${user.id}');
+
+      // Actualizar a la nueva contraseña
+      final response = await client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+
+      if (response.user == null) {
+        throw Exception('No se pudo actualizar la contraseña');
+      }
+
+      debugPrint('changePassword -> Password updated successfully');
+    } catch (e) {
+      debugPrint('changePassword -> error: $e');
+      rethrow;
+    }
+  }
+
   Future<UserModel?> getCurrentUser() async {
     try {
       final user = client.auth.currentUser;
