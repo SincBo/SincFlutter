@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../providers/providers.dart';
 
@@ -139,7 +140,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
                             )
-                          : const Icon(Icons.g_translate, color: Colors.red),
+                          : const FaIcon(FontAwesomeIcons.google, color: Colors.red, size: 20),
                         label: Text(_isGoogleLoading ? 'Cargando...' : 'Google'),
                         onPressed: _isGoogleLoading ? null : () async {
                           setState(() => _isGoogleLoading = true);
@@ -336,6 +337,22 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
     super.dispose();
   }
 
+  static void _showForgotPasswordSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: const _ForgotPasswordSheet(),
+      ),
+    );
+  }
+
   Future<void> _onSubmit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -424,6 +441,15 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
                               ),
                       ),
                     ),
+                    // const SizedBox(height: 8),
+                    // // Forgot password link
+                    // TextButton(
+                    //   onPressed: () {
+                    //     Navigator.of(context).pop();
+                    //     _showForgotPasswordSheet(context, ref);
+                    //   },
+                    //   child: const Text('¿Olvidaste tu contraseña?'),
+                    // ),
                     const SizedBox(height: 12),
                   ],
                 ),
@@ -690,5 +716,148 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
         ),
       );
     });
+  }
+}
+
+/// Bottom sheet para recuperar contraseña
+class _ForgotPasswordSheet extends ConsumerStatefulWidget {
+  const _ForgotPasswordSheet();
+
+  @override
+  ConsumerState<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+class _ForgotPasswordSheetState extends ConsumerState<_ForgotPasswordSheet> {
+  final _emailController = TextEditingController();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onSubmit() async {
+    if (_isSubmitting) return;
+
+    final email = _emailController.text.trim();
+
+    // Validación
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa tu correo electrónico')),
+      );
+      return;
+    }
+
+    // Validación básica de email
+    if (!email.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa un correo válido')),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      await ref.read(authNotifierProvider.notifier).resetPasswordForEmail(email);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Se ha enviado un email de recuperación. Revisa tu correo.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Handle indicator
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Title
+          Text(
+            '¿Olvidaste tu contraseña?',
+            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+
+          // Subtitle
+          Text(
+            'Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+
+          // Email field
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Correo electrónico',
+              prefixIcon: Icon(Icons.email_outlined),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Submit button
+          ElevatedButton(
+            onPressed: _isSubmitting ? null : _onSubmit,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Enviar enlace de recuperación'),
+          ),
+          const SizedBox(height: 12),
+
+          // Cancel button
+          TextButton(
+            onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
   }
 }

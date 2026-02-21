@@ -66,4 +66,12 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
       rethrow;
     }
   }
+
+  Future<void> resetPasswordForEmail(String email) async {
+    try {
+      await repository.resetPasswordForEmail(email);
+    } catch (e, st) {
+      rethrow;
+    }
+  }
 }

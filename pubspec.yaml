@@ -39,6 +39,7 @@ dependencies:
   supabase_flutter: ^2.10.3
   flutter_dotenv: ^6.0.0
   image_picker: ^1.0.7
+  font_awesome_flutter: ^10.7.0
 
 dev_dependencies:
   flutter_test:

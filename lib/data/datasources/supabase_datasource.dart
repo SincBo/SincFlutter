@@ -62,6 +62,23 @@ class SupabaseDataSource {
     }
   }
 
+  /// Envía un email para resetear la contraseña
+  Future<void> resetPasswordForEmail(String email) async {
+    try {
+      debugPrint('resetPasswordForEmail -> Sending reset email to: $email');
+
+      await client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'com.sincbo.sincboflutter://login-callback',
+      );
+
+      debugPrint('resetPasswordForEmail -> Reset email sent successfully');
+    } catch (e) {
+      debugPrint('resetPasswordForEmail -> error: $e');
+      rethrow;
+    }
+  }
+
   Future<UserModel?> getCurrentUser() async {
     try {
       final user = client.auth.currentUser;

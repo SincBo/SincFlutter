@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:sincboflutter/ui/pages/home/home_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
 
 import 'ui/pages/login_page.dart';
+import 'ui/pages/reset_password_page.dart';
 import 'providers/providers.dart';
 
 Future<void> main() async {
@@ -23,14 +25,54 @@ Future<void> main() async {
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupAuthListener();
+  }
+
+  void _setupAuthListener() {
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+
+      debugPrint('AuthStateChange event: $event');
+
+      if (event == AuthChangeEvent.passwordRecovery) {
+        debugPrint('Password recovery mode detected');
+        // Navegar a ResetPasswordPage
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const ResetPasswordPage()),
+            (route) => false,
+          );
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Sincbo Flutter',
       home: authState.when(
         data: (user) {
