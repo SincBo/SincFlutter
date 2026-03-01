@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'ui/pages/login_page.dart';
 import 'ui/pages/reset_password_page.dart';
+import 'ui/theme/app_theme.dart';
 import 'providers/providers.dart';
 
 Future<void> main() async {
@@ -74,6 +75,9 @@ class _MyAppState extends ConsumerState<MyApp> {
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: 'Sincbo Flutter',
+      theme: AppTheme.lightTheme(),
+      darkTheme: AppTheme.darkTheme(),
+      themeMode: ThemeMode.system,
       home: authState.when(
         data: (user) {
           if (user == null) return const LoginPage();
