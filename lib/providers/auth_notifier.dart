@@ -95,7 +95,14 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
   // }
 
   Future<void> signOut() async {
-    await repository.signOut();
+    try {
+      await repository.signOut();
+    } catch (e) {
+      print("signOut error: $e");
+    }
+    // Forzar el estado a null para garantizar redirección al login
+    // incluso si el stream de onAuthStateChange tarda en disparar
+    state = const AsyncValue.data(null);
   }
 
   Future<void> changePassword({required String newPassword}) async {

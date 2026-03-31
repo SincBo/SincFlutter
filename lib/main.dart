@@ -52,10 +52,17 @@ class _MyAppState extends ConsumerState<MyApp> {
 
       if (event == AuthChangeEvent.passwordRecovery) {
         debugPrint('Password recovery mode detected');
-        // Navegar a ResetPasswordPage
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _navigatorKey.currentState?.pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const ResetPasswordPage()),
+            (route) => false,
+          );
+        });
+      } else if (event == AuthChangeEvent.signedOut) {
+        debugPrint('User signed out - navigating to LoginPage');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginPage()),
             (route) => false,
           );
         });
