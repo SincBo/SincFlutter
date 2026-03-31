@@ -66,9 +66,14 @@ final creatorRepositoryProvider = Provider<CreatorRepository>((ref) {
 /// ----------------------
 /// PROVIDER: Fetch creators
 /// ----------------------
-final creatorsProvider = FutureProvider<List<CreatorEntity>>((ref) async {
+final creatorsProvider = FutureProvider((ref) async {
+  final user = ref.watch(authNotifierProvider).value;
+
+  // 🔥 SI NO HAY USUARIO → NO HACER NADA
+  if (user == null) return [];
+
   final repo = ref.read(creatorRepositoryProvider);
-  return repo.obtenerCreadores();
+  return await repo.obtenerCreadores();
 });
 
 

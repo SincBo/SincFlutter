@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:sincboflutter/AuthGate.dart';
 import 'package:sincboflutter/ui/pages/home/home_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
@@ -78,14 +79,102 @@ class _MyAppState extends ConsumerState<MyApp> {
       theme: AppTheme.lightTheme(),
       darkTheme: AppTheme.darkTheme(),
       themeMode: ThemeMode.system,
-      home: authState.when(
-        data: (user) {
-          if (user == null) return const LoginPage();
-          return const HomePage();
-        },
-        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-        error: (e, st) => Scaffold(body: Center(child: Text('Error: ${e.toString()}'))),
+      home: const AuthGate(),
+    );
+  }
+}
+
+/// Splash Screen con degradado radial verde a negro
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.center,
+            radius: 1.5,
+            colors: [
+              Color(0xFF00D9C0), // Verde centro
+              Color(0xFF000000), // Negro esquinas
+            ],
+            stops: [0.3, 1.0],
+          ),
+        ),
+        child: Center(
+          child: Image.asset(
+            'assets/images/sinc.png',
+            width: 200,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.image_not_supported,
+                size: 100,
+                color: Colors.white,
+              );
+            },
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// Splash que transiciona automáticamente al Login
+class SplashToLoginScreen extends StatefulWidget {
+  const SplashToLoginScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SplashToLoginScreen> createState() => _SplashToLoginScreenState();
+}
+
+class _SplashToLoginScreenState extends State<SplashToLoginScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _navigateToLogin();
+  }
+
+  Future<void> _navigateToLogin() async {
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const SplashScreen();
+  }
+}
+
+/// Splash que transiciona automáticamente al Home
+class SplashToHomeScreen extends StatefulWidget {
+  const SplashToHomeScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SplashToHomeScreen> createState() => _SplashToHomeScreenState();
+}
+
+class _SplashToHomeScreenState extends State<SplashToHomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _navigateToHome();
+  }
+
+  Future<void> _navigateToHome() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomePage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const SplashScreen();
   }
 }

@@ -8,6 +8,7 @@ import 'package:sincboflutter/ui/pages/home/suscritos_page.dart';
 
 import '../../../domain/entities/creator.dart';
 import '../../../providers/providers.dart';
+import '../login_page.dart';
 import 'comunidad_page.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -48,11 +49,14 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return authState.when(
       data: (user) {
+        if (user == null) {
+          return const SizedBox.shrink();
+        }
         final creatorsAsync = ref.watch(creatorsProvider);
 
         return creatorsAsync.when(
           data: (creators) {
-            final isCreator = user!.esCreador || false;
+            final isCreator = user.esCreador || false;
 
             // Defer counts load until after first build to avoid build-time async
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,7 +70,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             if (isCreator) {
               // Order: Comunidad, Fellows(N), Solicitudes(N), Ganancias
               pages = <Widget>[
-                _ComunidadChatLauncher(userId: user!.id),
+                _ComunidadChatLauncher(userId: user.id),
                 const FellowCreatorPage(),
                 const SuscritosPage(), // placeholder for Solicitudes page
                 const GananciasPage(), // placeholder for Ganancias page
@@ -140,6 +144,13 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
   }
 
   Future<void> _openChat() async {
+    final authUser = ref.read(authNotifierProvider).maybeWhen(
+      data: (u) => u,
+      orElse: () => null,
+    );
+
+    // 🔥 SI NO HAY USUARIO → NO HACER NADA
+    if (authUser == null) return;
     setState(() => _error = null);
     try {
       // Fetch creators and try to find current user as creator entity
@@ -174,7 +185,14 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
       _creator = me;
 
       // Create or get chat for this creator
+      if (me.planes == null || me.planes!.isEmpty) {
+        setState(() => _error = 'El creador no tiene planes disponibles');
+        return;
+      }
+
+      final planId = me.planes!.first['id_plan'] as String;
       final chatId = await repo.crearChatYParticipantes(me.idUsuario, me.planes?[0]['id_plan'] as String, false);
+      if (!mounted) return;
       setState(() => _chatId = chatId?? '');
     } catch (e) {
       setState(() => _error = e.toString());

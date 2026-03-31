@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+4
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -66,9 +66,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/images/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware
@@ -100,23 +99,23 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/icon.png"  # Logo blanco sobre fondo turquesa
-  adaptive_icon_background: "#00D9C0"  # Fondo turquesa (color del tema)
-  adaptive_icon_foreground: "assets/images/icon.png"  # Logo blanco
+  image_path: "assets/images/sinc.png"  # Logo blanco sobre fondo turquesa
+  adaptive_icon_background: "#ffffff"  # Fondo turquesa (color del tema)
+  adaptive_icon_foreground: "assets/images/sinc.png"  # Logo blanco
   min_sdk_android: 21
   remove_alpha_ios: false
 
 # Configuración del splash screen
 flutter_native_splash:
-  color: "#00D9C0"  # Fondo turquesa (color de la marca)
-  image: "assets/images/splash.png"  # Logo blanco sobre fondo turquesa
+  color: "#000000"  # Fondo turquesa (color de la marca)
+  image: "assets/images/sinc.png"  # Logo blanco sobre fondo turquesa
   android: true
-  ios: true
+  ios: false
   web: false
 
   android_12:
-    color: "#00D9C0"
-    image: "assets/images/splash.png"
+    color: "#000000"
+    image: "assets/images/sinc.png"
 
   ios_content_mode: center
 

@@ -6,9 +6,9 @@ class UserModel extends UserEntity {
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
-      id: map['id'] as String,
+      id: map['id_usuario'] as String,
       email: map['email'] as String?,
-      username: map['username'] as String?,
+      username: map['nombre_usuario'] as String?,
       avatarUrl: map['avatar_url'] as String?,
       esCreador: map['es_creador'] as bool? ?? false,
     );
@@ -22,14 +22,15 @@ class UserModel extends UserEntity {
     );
   }
 
-  factory UserModel.fromAuthAndProfile(User user, Map<String, dynamic> profile) {
+  factory UserModel.fromAuthAndProfile(User user, Map<String, dynamic>? profile) {
     final meta = user.userMetadata ?? {};
+
     return UserModel(
       id: user.id,
       email: user.email,
-      username: profile['nombre_usuario'] as String?,
-      esCreador: profile['es_creador'] as bool? ?? false,
-      avatarUrl: meta['avatar_url'] as String?, // 👈 viene de Auth
+      username: profile?['nombre_usuario'] as String?,
+      esCreador: profile?['es_creador'] as bool? ?? false,
+      avatarUrl: meta['avatar_url'] as String?,
     );
   }
 

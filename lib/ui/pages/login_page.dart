@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../../data/models/user_model.dart';
 import '../../providers/providers.dart';
+import 'home/home_page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
@@ -55,6 +57,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<dynamic>>(authNotifierProvider, (previous, next) {
+      next.when(
+        data: (user) {
+          if (user != null) {
+            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+            );
+          } else {
+            // 👇 ESTE ES EL FIX
+            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+                  (route) => false,
+            );
+          }
+        },
+        loading: () {},
+        error: (_, __) {},
+      );
+    });
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -197,7 +219,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             } else {
                               // Existing user - update auth state
                               debugPrint('LoginPage -> Updating auth state for existing user');
-                              await ref.read(authNotifierProvider.notifier).signInWithGoogle();
+                              final profile = await ds.client
+                                  .from('usuario')
+                                  .select()
+                                  .eq('id_usuario', user.id)
+                                  .single();
+
+                              final authUser = ds.client.auth.currentUser;
+
+                              if (authUser == null) {
+                                throw Exception('Auth user is null');
+                              }
+
+                              final userModel = UserModel.fromAuthAndProfile(authUser, profile);
+
+                              ref.read(authNotifierProvider.notifier).setUser(userModel);
                               if (mounted) setState(() => _isGoogleLoading = false);
                             }
                           } catch (e) {
@@ -215,91 +251,103 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     const SizedBox(width: 12),
 
                     // Facebook
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1877F2),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        icon: _isFacebookLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.facebook),
-                        label: Text(_isFacebookLoading ? 'Cargando...' : 'Facebook'),
-                        onPressed: _isFacebookLoading ? null : () async {
-                          setState(() => _isFacebookLoading = true);
-
-                          try {
-                            final ds = ref.read(supabaseDataSourceProvider);
-
-                            debugPrint('LoginPage -> Starting Facebook sign in');
-
-                            // Try to sign in with Facebook
-                            final user = await ds.signInWithFacebook();
-
-                            debugPrint('LoginPage -> Facebook sign in result: ${user?.id}');
-
-                            if (user == null) {
-                              if (mounted) {
-                                setState(() => _isFacebookLoading = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('No se pudo iniciar sesión con Facebook')),
-                                );
-                              }
-                              return;
-                            }
-
-                            // Check if user profile exists in our usuario table
-                            final existing = await ds.client
-                                .from('usuario')
-                                .select('id_usuario')
-                                .eq('id_usuario', user.id)
-                                .maybeSingle();
-
-                            debugPrint('LoginPage -> User exists in table: ${existing != null}');
-
-                            if (existing == null && mounted) {
-                              // New user - show registration sheet with prefilled data
-                              setState(() => _isFacebookLoading = false);
-
-                              final authUser = ds.client.auth.currentUser;
-                              if (authUser != null) {
-                                final fullName = authUser.userMetadata?['full_name'] ??
-                                                 authUser.userMetadata?['name'] ?? '';
-                                final nameParts = fullName.toString().split(' ');
-                                final nombre = nameParts.isNotEmpty ? nameParts.first : '';
-                                final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-
-                                _showSignUpSheet(
-                                  context,
-                                  prefilledNombre: nombre,
-                                  prefilledApellido: apellido,
-                                  prefilledEmail: authUser.email ?? '',
-                                  isOAuthSignup: true,
-                                );
-                              }
-                            } else {
-                              // Existing user - update auth state
-                              debugPrint('LoginPage -> Updating auth state for existing user');
-                              await ref.read(authNotifierProvider.notifier).signInWithFacebook();
-                              if (mounted) setState(() => _isFacebookLoading = false);
-                            }
-                          } catch (e) {
-                            debugPrint('LoginPage -> Facebook sign in error: $e');
-                            if (mounted) {
-                              setState(() => _isFacebookLoading = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error con Facebook: $e')),
-                              );
-                            }
-                          }
-                        },
-                      ),
-                    ),
+                    // Expanded(
+                    //   child: ElevatedButton.icon(
+                    //     style: ElevatedButton.styleFrom(
+                    //       backgroundColor: const Color(0xFF1877F2),
+                    //       foregroundColor: Colors.white,
+                    //       padding: const EdgeInsets.symmetric(vertical: 12),
+                    //     ),
+                    //     icon: _isFacebookLoading
+                    //       ? const SizedBox(
+                    //           width: 16,
+                    //           height: 16,
+                    //           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    //         )
+                    //       : const Icon(Icons.facebook),
+                    //     label: Text(_isFacebookLoading ? 'Cargando...' : 'Facebook'),
+                    //     onPressed: _isFacebookLoading ? null : () async {
+                    //       setState(() => _isFacebookLoading = true);
+                    //
+                    //       try {
+                    //         final ds = ref.read(supabaseDataSourceProvider);
+                    //
+                    //         debugPrint('LoginPage -> Starting Facebook sign in');
+                    //
+                    //         // Try to sign in with Facebook
+                    //         final user = await ds.signInWithFacebook();
+                    //
+                    //         debugPrint('LoginPage -> Facebook sign in result: ${user?.id}');
+                    //
+                    //         if (user == null) {
+                    //           if (mounted) {
+                    //             setState(() => _isFacebookLoading = false);
+                    //             ScaffoldMessenger.of(context).showSnackBar(
+                    //               const SnackBar(content: Text('No se pudo iniciar sesión con Facebook')),
+                    //             );
+                    //           }
+                    //           return;
+                    //         }
+                    //
+                    //         // Check if user profile exists in our usuario table
+                    //         final existing = await ds.client
+                    //             .from('usuario')
+                    //             .select('id_usuario')
+                    //             .eq('id_usuario', user.id)
+                    //             .maybeSingle();
+                    //
+                    //         debugPrint('LoginPage -> User exists in table: ${existing != null}');
+                    //
+                    //         if (existing == null && mounted) {
+                    //           // New user - show registration sheet with prefilled data
+                    //           setState(() => _isFacebookLoading = false);
+                    //
+                    //           final authUser = ds.client.auth.currentUser;
+                    //           if (authUser != null) {
+                    //             final fullName = authUser.userMetadata?['full_name'] ??
+                    //                              authUser.userMetadata?['name'] ?? '';
+                    //             final nameParts = fullName.toString().split(' ');
+                    //             final nombre = nameParts.isNotEmpty ? nameParts.first : '';
+                    //             final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+                    //
+                    //             _showSignUpSheet(
+                    //               context,
+                    //               prefilledNombre: nombre,
+                    //               prefilledApellido: apellido,
+                    //               prefilledEmail: authUser.email ?? '',
+                    //               isOAuthSignup: true,
+                    //             );
+                    //           }
+                    //         } else {
+                    //           // Existing user - update auth state
+                    //           debugPrint('LoginPage -> Updating auth state for existing user');
+                    //           final profile = await ds.client
+                    //               .from('usuario')
+                    //               .select()
+                    //               .eq('id_usuario', user.id)
+                    //               .single();
+                    //           final authUser = ds.client.auth.currentUser;
+                    //
+                    //           if (authUser == null) {
+                    //             throw Exception('Auth user is null');
+                    //           }
+                    //           final userModel = UserModel.fromAuthAndProfile(authUser, profile);
+                    //
+                    //           ref.read(authNotifierProvider.notifier).setUser(userModel);
+                    //           if (mounted) setState(() => _isFacebookLoading = false);
+                    //         }
+                    //       } catch (e) {
+                    //         debugPrint('LoginPage -> Facebook sign in error: $e');
+                    //         if (mounted) {
+                    //           setState(() => _isFacebookLoading = false);
+                    //           ScaffoldMessenger.of(context).showSnackBar(
+                    //             SnackBar(content: Text('Error con Facebook: $e')),
+                    //           );
+                    //         }
+                    //       }
+                    //     },
+                    //   ),
+                    // ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -564,7 +612,15 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
           });
 
           // Refresh auth state to load the new user profile
-          await ref.read(authNotifierProvider.notifier).signInWithGoogle();
+          final profile = await ds.client
+              .from('usuario')
+              .select()
+              .eq('id_usuario', user.id)
+              .single();
+
+          final userModel = UserModel.fromAuthAndProfile(user, profile);
+
+          ref.read(authNotifierProvider.notifier).setUser(userModel);
         }
       } else {
         // Registro tradicional con email y contraseña

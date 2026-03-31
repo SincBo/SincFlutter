@@ -65,6 +65,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
       _creators.clear();
     });
     await _fetchPage();
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });
@@ -76,6 +77,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
       _isLoadingMore = true;
     });
     await _fetchPage();
+    if (!mounted) return;
     setState(() {
       _isLoadingMore = false;
     });
@@ -123,7 +125,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
         });
         return;
       }
-
+      if (!mounted) return;
       setState(() {
         _creators.addAll(results);
         if (results.length < _pageSize) {

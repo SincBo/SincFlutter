@@ -19,16 +19,31 @@ class SupabaseDataSource {
   SupabaseDataSource(this.client);
 
   Future<UserModel?> signInWithEmail(String email, String password) async {
-    final res = await client.auth.signInWithPassword(email: email, password: password);
-    final user = res.user;
-    if (user == null) return null;
-    // 🔥 CONSULTA A TU TABLA usuario
-    final profile = await client
-        .from('usuario')
-        .select('id_usuario, email, nombre_usuario, es_creador')
-        .eq('id_usuario', user.id)
-        .single();
-    return UserModel.fromAuthAndProfile(user, profile);
+    try {
+      final res = await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = res.user;
+      if (user == null) return null;
+
+      final profile = await client
+          .from('usuario')
+          .select('id_usuario, email, nombre_usuario, es_creador')
+          .eq('id_usuario', user.id)
+          .maybeSingle(); // 👈 mejor que single()
+
+      if (profile != null) {
+        return UserModel.fromAuthAndProfile(user, profile);
+      }
+
+      // fallback si no existe en tabla
+      return UserModel.fromUser(user);
+    } catch (e) {
+      debugPrint('signInWithEmail -> error: $e');
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {
@@ -82,22 +97,24 @@ class SupabaseDataSource {
   Future<UserModel?> getCurrentUser() async {
     try {
       final user = client.auth.currentUser;
-      if (user == null) return null;
 
-      // Intentar obtener el perfil de la tabla usuario
+      if (user == null) {
+        debugPrint('getCurrentUser -> NO AUTH USER');
+        return null;
+      }
+
       final profile = await client
           .from('usuario')
           .select('id_usuario, email, nombre_usuario, es_creador')
           .eq('id_usuario', user.id)
           .maybeSingle();
 
-      if (profile != null) {
-        return UserModel.fromAuthAndProfile(user, profile);
-      } else {
-        // Si no existe en la tabla, devolver el modelo básico de auth
-        debugPrint('getCurrentUser -> User exists in auth but not in usuario table');
-        return UserModel.fromUser(user);
+      if (profile == null) {
+        debugPrint('getCurrentUser -> NO PROFILE, forcing logout state');
+        return null; // 🔥 CAMBIO CLAVE
       }
+
+      return UserModel.fromAuthAndProfile(user, profile);
     } catch (e) {
       debugPrint('getCurrentUser -> error: $e');
       return null;
@@ -106,84 +123,60 @@ class SupabaseDataSource {
 
   /// Inicia sesión con Google OAuth
   /// No crea automáticamente el usuario en la tabla, solo autentica
-  Future<UserModel?> signInWithGoogle() async {
-    try {
-      // Verificar si ya hay una sesión activa primero
-      final currentUser = client.auth.currentUser;
-      if (currentUser != null) {
-        debugPrint('signInWithGoogle -> User already authenticated: ${currentUser.id}');
-        return UserModel.fromUser(currentUser);
-      }
-
-      debugPrint('signInWithGoogle -> Starting OAuth flow');
-      final res = await client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'com.sincbo.sincboflutter://login-callback',
-      );
-
-      if (!res) {
-        debugPrint('signInWithGoogle -> OAuth flow not started');
-        return null;
-      }
-
-      debugPrint('signInWithGoogle -> OAuth flow started, waiting for auth state change');
-
-      // Esperar a que el auth state cambie (máximo 30 segundos)
-      final user = await _waitForAuthStateChange();
-
-      if (user == null) {
-        debugPrint('signInWithGoogle -> No user after OAuth callback timeout');
-        return null;
-      }
-
-      debugPrint('signInWithGoogle -> User authenticated: ${user.id}');
-      return UserModel.fromUser(user);
-    } catch (e) {
-      debugPrint('signInWithGoogle -> error: $e');
-      rethrow;
-    }
+  Future<User?> signInWithGoogle() async {
+    return _signInWithOAuthProvider(
+      OAuthProvider.google,
+      'signInWithGoogle',
+    );
   }
 
   /// Inicia sesión con Facebook OAuth
   /// No crea automáticamente el usuario en la tabla, solo autentica
-  Future<UserModel?> signInWithFacebook() async {
+  Future<User?> signInWithFacebook() async {
+    return _signInWithOAuthProvider(
+      OAuthProvider.facebook,
+      'signInWithFacebook',
+    );
+  }
+
+  Future<User?> _signInWithOAuthProvider(
+      OAuthProvider provider,
+      String providerName,
+      ) async {
     try {
-      // Verificar si ya hay una sesión activa primero
       final currentUser = client.auth.currentUser;
+
       if (currentUser != null) {
-        debugPrint('signInWithFacebook -> User already authenticated: ${currentUser.id}');
-        return UserModel.fromUser(currentUser);
+        debugPrint('$providerName -> User already authenticated: ${currentUser.id}');
+        return currentUser; // 👈 YA NO UserModel
       }
 
-      debugPrint('signInWithFacebook -> Starting OAuth flow');
+      debugPrint('$providerName -> Starting OAuth flow');
+
       final res = await client.auth.signInWithOAuth(
-        OAuthProvider.facebook,
+        provider,
         redirectTo: 'com.sincbo.sincboflutter://login-callback',
       );
 
       if (!res) {
-        debugPrint('signInWithFacebook -> OAuth flow not started');
+        debugPrint('$providerName -> OAuth flow not started');
         return null;
       }
 
-      debugPrint('signInWithFacebook -> OAuth flow started, waiting for auth state change');
-
-      // Esperar a que el auth state cambie (máximo 30 segundos)
       final user = await _waitForAuthStateChange();
 
       if (user == null) {
-        debugPrint('signInWithFacebook -> No user after OAuth callback timeout');
+        debugPrint('$providerName -> No user after callback');
         return null;
       }
 
-      debugPrint('signInWithFacebook -> User authenticated: ${user.id}');
-      return UserModel.fromUser(user);
+      debugPrint('$providerName -> User authenticated: ${user.id}');
+      return user; // 👈 USER REAL
     } catch (e) {
-      debugPrint('signInWithFacebook -> error: $e');
+      debugPrint('$providerName -> error: $e');
       rethrow;
     }
   }
-
   /// Espera a que cambie el estado de autenticación después de OAuth
   Future<User?> _waitForAuthStateChange() async {
     try {

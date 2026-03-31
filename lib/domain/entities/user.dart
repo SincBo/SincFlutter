@@ -12,5 +12,15 @@ class UserEntity {
     this.avatarUrl,
     required this.esCreador,
   });
+
+  factory UserEntity.fromMap(Map<String, dynamic> map) {
+    return UserEntity(
+      id: map['id_usuario'] as String,
+      email: map['email'] as String?,
+      username: map['nombre_usuario'] as String?,
+      avatarUrl: map['avatar_url'] as String?,
+      esCreador: map['es_creador'] ?? false,
+    );
+  }
 }
 
