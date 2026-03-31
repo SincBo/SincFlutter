@@ -36,9 +36,17 @@ class CreatorRepositoryImpl implements CreatorRepository {
     try {
       return await datasource.crearChatYParticipantes(idCreador, idPlan, isCreator);
     } catch (e) {
-      // Log and return null on failure
-      // In higher layers you might want to surface the error instead
       debugPrint('CreatorRepositoryImpl.crearChatYParticipantes -> error: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> getOrCreateComunidadChatCreador(String idCreador) async {
+    try {
+      return await datasource.getOrCreateComunidadChatCreador(idCreador);
+    } catch (e) {
+      debugPrint('CreatorRepositoryImpl.getOrCreateComunidadChatCreador -> error: $e');
       return null;
     }
   }

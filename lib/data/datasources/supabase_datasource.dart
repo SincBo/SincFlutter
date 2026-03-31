@@ -386,6 +386,40 @@ class SupabaseDataSource {
     }
   }
 
+  /// Busca o crea un chat de comunidad para el creador sin necesitar un plan.
+  /// Primero intenta buscar un chat existente en la tabla chat donde id_creador coincide.
+  /// Si no existe, crea uno nuevo.
+  Future<String?> getOrCreateComunidadChatCreador(String idCreador) async {
+    try {
+      // Buscar chat existente del creador
+      final existing = await client
+          .from('chat')
+          .select('id_chat')
+          .eq('id_creador', idCreador)
+          .limit(1)
+          .maybeSingle();
+
+      if (existing != null) {
+        final id = existing['id_chat'];
+        if (id is String && id.isNotEmpty) return id;
+      }
+
+      // Si no existe, crear uno nuevo
+      final inserted = await client
+          .from('chat')
+          .insert({'id_creador': idCreador})
+          .select('id_chat')
+          .single();
+
+      final id = inserted['id_chat'];
+      if (id is String && id.isNotEmpty) return id;
+      return null;
+    } catch (e) {
+      debugPrint('getOrCreateComunidadChatCreador -> error: $e');
+      return null;
+    }
+  }
+
   /// Sends a message via the Postgres RPC `enviar_mensaje(id_chat_param, id_remitente_param, contenido_param)`.
   /// Returns true on success, false on failure (including unauthenticated user).
   Future<bool> enviarMensaje(String idChat, String contenido) async {

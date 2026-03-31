@@ -184,16 +184,19 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
 
       _creator = me;
 
-      // Create or get chat for this creator
-      if (me.planes == null || me.planes!.isEmpty) {
-        setState(() => _error = 'El creador no tiene planes disponibles');
-        return;
+      String? chatId;
+
+      // Si el creador tiene planes, usar el flujo normal con el primer plan
+      if (me.planes != null && me.planes!.isNotEmpty) {
+        final planId = me.planes!.first['id_plan'] as String;
+        chatId = await repo.crearChatYParticipantes(me.idUsuario, planId, false);
+      } else {
+        // Sin planes: buscar o crear el chat de comunidad directamente
+        chatId = await repo.getOrCreateComunidadChatCreador(me.idUsuario);
       }
 
-      final planId = me.planes!.first['id_plan'] as String;
-      final chatId = await repo.crearChatYParticipantes(me.idUsuario, me.planes?[0]['id_plan'] as String, false);
       if (!mounted) return;
-      setState(() => _chatId = chatId?? '');
+      setState(() => _chatId = chatId ?? '');
     } catch (e) {
       setState(() => _error = e.toString());
     }
