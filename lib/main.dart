@@ -45,9 +45,9 @@ class _MyAppState extends ConsumerState<MyApp> {
   }
 
   void _setupAuthListener() {
+    // Solo manejar passwordRecovery aquí, lo demás lo maneja AuthGate
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       final event = data.event;
-
       debugPrint('AuthStateChange event: $event');
 
       if (event == AuthChangeEvent.passwordRecovery) {
@@ -55,14 +55,6 @@ class _MyAppState extends ConsumerState<MyApp> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _navigatorKey.currentState?.pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const ResetPasswordPage()),
-            (route) => false,
-          );
-        });
-      } else if (event == AuthChangeEvent.signedOut) {
-        debugPrint('User signed out - navigating to LoginPage');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
             (route) => false,
           );
         });
@@ -78,7 +70,6 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authNotifierProvider);
 
     return MaterialApp(
       navigatorKey: _navigatorKey,

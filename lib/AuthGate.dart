@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/providers/providers.dart';
@@ -12,16 +11,9 @@ class AuthGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authNotifierProvider);
 
-    print("AUTH STATE BUILD: $authState");
-
     return authState.when(
       data: (user) {
-        print("USER: $user");
-
-        if (user == null) {
-          return const LoginPage();
-        }
-
+        if (user == null) return const LoginPage();
         return const HomePage();
       },
       loading: () => const Scaffold(

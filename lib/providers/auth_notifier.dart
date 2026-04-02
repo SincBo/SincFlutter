@@ -16,21 +16,26 @@ class AuthStateNotifier extends sn.StateNotifier<AsyncValue<UserEntity?>> {
   }
   void _init() {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final session = data.session;
-
       print("AUTH EVENT: ${data.event}");
 
-      if (session == null) {
+      if (data.event == AuthChangeEvent.signedOut || data.session == null) {
         print("USER LOGGED OUT");
         state = const AsyncValue.data(null);
-      } else {
+      } else if (data.event == AuthChangeEvent.signedIn ||
+                 data.event == AuthChangeEvent.tokenRefreshed ||
+                 data.event == AuthChangeEvent.userUpdated) {
         print("USER LOGGED IN");
         final user = await repository.getCurrentUser();
-        state = AsyncValue.data(user);
+        // Solo actualizar el state si encontramos el perfil.
+        // Si no hay perfil aún (flujo OAuth en progreso), no tocar el state.
+        if (user != null) {
+          state = AsyncValue.data(user);
+        }
+        // Si user == null pero hay sesión activa, el flujo OAuth del LoginPage
+        // se encargará de verificar y mostrar el sheet de registro si corresponde.
       }
     });
 
-    // 🔥 IMPORTANTE: mover esto AL FINAL
     _loadCurrentUser();
   }
 

@@ -103,20 +103,24 @@ class SupabaseDataSource {
         return null;
       }
 
+      debugPrint('getCurrentUser -> querying usuario for id=${user.id}');
+
       final profile = await client
           .from('usuario')
           .select('id_usuario, email, nombre_usuario, es_creador')
           .eq('id_usuario', user.id)
           .maybeSingle();
 
+      debugPrint('getCurrentUser -> profile result: $profile');
+
       if (profile == null) {
-        debugPrint('getCurrentUser -> NO PROFILE, forcing logout state');
-        return null; // 🔥 CAMBIO CLAVE
+        debugPrint('getCurrentUser -> NO PROFILE found for user ${user.id}');
+        return null;
       }
 
       return UserModel.fromAuthAndProfile(user, profile);
-    } catch (e) {
-      debugPrint('getCurrentUser -> error: $e');
+    } catch (e, st) {
+      debugPrint('getCurrentUser -> error: $e\n$st');
       return null;
     }
   }
@@ -144,14 +148,19 @@ class SupabaseDataSource {
       String providerName,
       ) async {
     try {
-      final currentUser = client.auth.currentUser;
-
-      if (currentUser != null) {
-        debugPrint('$providerName -> User already authenticated: ${currentUser.id}');
-        return currentUser; // 👈 YA NO UserModel
-      }
-
       debugPrint('$providerName -> Starting OAuth flow');
+
+      // ⚡ Suscribir ANTES de lanzar el OAuth para no perder el evento signedIn
+      final completer = Completer<User?>();
+      StreamSubscription? subscription;
+      subscription = client.auth.onAuthStateChange.listen((data) {
+        debugPrint('$providerName -> auth event: ${data.event}');
+        if (data.event == AuthChangeEvent.signedIn &&
+            data.session?.user != null &&
+            !completer.isCompleted) {
+          completer.complete(data.session!.user);
+        }
+      });
 
       final res = await client.auth.signInWithOAuth(
         provider,
@@ -159,11 +168,20 @@ class SupabaseDataSource {
       );
 
       if (!res) {
+        await subscription.cancel();
         debugPrint('$providerName -> OAuth flow not started');
         return null;
       }
 
-      final user = await _waitForAuthStateChange();
+      final user = await completer.future.timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          debugPrint('$providerName -> Timeout, using currentUser');
+          return client.auth.currentUser;
+        },
+      );
+
+      await subscription.cancel();
 
       if (user == null) {
         debugPrint('$providerName -> No user after callback');
@@ -171,39 +189,10 @@ class SupabaseDataSource {
       }
 
       debugPrint('$providerName -> User authenticated: ${user.id}');
-      return user; // 👈 USER REAL
+      return user;
     } catch (e) {
       debugPrint('$providerName -> error: $e');
       rethrow;
-    }
-  }
-  /// Espera a que cambie el estado de autenticación después de OAuth
-  Future<User?> _waitForAuthStateChange() async {
-    try {
-      // Esperar hasta 30 segundos para que el usuario complete el OAuth
-      final completer = Completer<User?>();
-
-      final subscription = client.auth.onAuthStateChange.listen((event) {
-        debugPrint('signInWithGoogle -> Auth state changed: ${event.event}');
-        if (event.session?.user != null && !completer.isCompleted) {
-          completer.complete(event.session!.user);
-        }
-      });
-
-      // Timeout de 30 segundos
-      final user = await completer.future.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          debugPrint('signInWithGoogle -> Timeout waiting for auth state change');
-          return client.auth.currentUser;
-        },
-      );
-
-      await subscription.cancel();
-      return user;
-    } catch (e) {
-      debugPrint('signInWithGoogle -> Error waiting for auth state: $e');
-      return client.auth.currentUser;
     }
   }
 

@@ -15,7 +15,6 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   bool _isGoogleLoading = false;
-  bool _isFacebookLoading = false;
 
   void _showSignInSheet(BuildContext context) {
     showModalBottomSheet(
@@ -57,26 +56,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(authNotifierProvider, (previous, next) {
-      next.when(
-        data: (user) {
-          if (user != null) {
-            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const HomePage()),
-                  (route) => false,
-            );
-          } else {
-            // 👇 ESTE ES EL FIX
-            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginPage()),
-                  (route) => false,
-            );
-          }
-        },
-        loading: () {},
-        error: (_, __) {},
-      );
-    });
+    // No ref.listen aquí: AuthGate ya maneja la navegación reactiva.
+    // El botón de Google navega manualmente cuando corresponde.
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -166,78 +147,115 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         label: Text(_isGoogleLoading ? 'Cargando...' : 'Google'),
                         onPressed: _isGoogleLoading ? null : () async {
                           setState(() => _isGoogleLoading = true);
-
                           try {
                             final ds = ref.read(supabaseDataSourceProvider);
 
-                            debugPrint('LoginPage -> Starting Google sign in');
-
-                            // Try to sign in with Google
-                            final user = await ds.signInWithGoogle();
-
-                            debugPrint('LoginPage -> Google sign in result: ${user?.id}');
-
-                            if (user == null) {
-                              if (mounted) {
-                                setState(() => _isGoogleLoading = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('No se pudo iniciar sesión con Google')),
-                                );
+                            // ── PASO 0: si ya hay sesión activa verificar perfil ──
+                            final currentAuthUser = ds.client.auth.currentUser;
+                            if (currentAuthUser != null) {
+                              debugPrint('LoginPage -> Sesión activa: ${currentAuthUser.id}');
+                              Map<String, dynamic>? existingProfile;
+                              for (int i = 1; i <= 3; i++) {
+                                try {
+                                  existingProfile = await ds.client
+                                      .from('usuario').select()
+                                      .eq('id_usuario', currentAuthUser.id)
+                                      .maybeSingle();
+                                  if (existingProfile != null) break;
+                                } catch (_) {}
+                                if (i < 3) await Future.delayed(const Duration(milliseconds: 500));
                               }
+                              if (existingProfile != null) {
+                                debugPrint('LoginPage -> Perfil existe, actualizando state');
+                                final userModel = UserModel.fromAuthAndProfile(currentAuthUser, existingProfile);
+                                ref.read(authNotifierProvider.notifier).setUser(userModel);
+                                // AuthGate detectará el cambio y navegará a Home
+                                if (mounted) setState(() => _isGoogleLoading = false);
+                                return;
+                              }
+                              debugPrint('LoginPage -> Sesión sin perfil, cerrando sesión');
+                              await ds.client.auth.signOut();
+                            }
+
+                            debugPrint('LoginPage -> Iniciando OAuth Google');
+                            final oauthUser = await ds.signInWithGoogle();
+                            final user = oauthUser ?? ds.client.auth.currentUser;
+
+                            debugPrint('LoginPage -> user: ${user?.id}, email: ${user?.email}');
+
+                            if (!mounted) return;
+                            if (user == null) {
+                              setState(() => _isGoogleLoading = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No se pudo iniciar sesión con Google')),
+                              );
                               return;
                             }
 
-                            // Check if user profile exists in our usuario table
-                            final existing = await ds.client
-                                .from('usuario')
-                                .select('id_usuario')
-                                .eq('id_usuario', user.id)
-                                .maybeSingle();
+                            // Esperar a que la sesión se estabilice
+                            await Future.delayed(const Duration(milliseconds: 800));
 
-                            debugPrint('LoginPage -> User exists in table: ${existing != null}');
-
-                            if (existing == null && mounted) {
-                              // New user - show registration sheet with prefilled data
-                              setState(() => _isGoogleLoading = false);
-
-                              final authUser = ds.client.auth.currentUser;
-                              if (authUser != null) {
-                                final fullName = authUser.userMetadata?['full_name'] ??
-                                                 authUser.userMetadata?['name'] ?? '';
-                                final nameParts = fullName.toString().split(' ');
-                                final nombre = nameParts.isNotEmpty ? nameParts.first : '';
-                                final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-
-                                _showSignUpSheet(
-                                  context,
-                                  prefilledNombre: nombre,
-                                  prefilledApellido: apellido,
-                                  prefilledEmail: authUser.email ?? '',
-                                  isOAuthSignup: true,
-                                );
+                            // Buscar perfil con retry
+                            Map<String, dynamic>? existing;
+                            for (int i = 1; i <= 5; i++) {
+                              try {
+                                existing = await ds.client
+                                    .from('usuario').select()
+                                    .eq('id_usuario', user.id)
+                                    .maybeSingle();
+                                debugPrint('LoginPage -> Intento $i: perfil=${existing != null}');
+                                if (existing != null) break;
+                              } catch (e) {
+                                debugPrint('LoginPage -> Intento $i error: $e');
                               }
-                            } else {
-                              // Existing user - update auth state
-                              debugPrint('LoginPage -> Updating auth state for existing user');
-                              final profile = await ds.client
-                                  .from('usuario')
-                                  .select()
-                                  .eq('id_usuario', user.id)
-                                  .single();
+                              await Future.delayed(const Duration(milliseconds: 600));
+                            }
 
-                              final authUser = ds.client.auth.currentUser;
-
-                              if (authUser == null) {
-                                throw Exception('Auth user is null');
+                            // Fallback por email
+                            if (existing == null && user.email != null) {
+                              try {
+                                existing = await ds.client
+                                    .from('usuario').select()
+                                    .eq('email', user.email!)
+                                    .maybeSingle();
+                                debugPrint('LoginPage -> Por email: perfil=${existing != null}');
+                              } catch (e) {
+                                debugPrint('LoginPage -> email fallback error: $e');
                               }
+                            }
 
-                              final userModel = UserModel.fromAuthAndProfile(authUser, profile);
+                            if (!mounted) return;
 
+                            if (existing != null) {
+                              // Usuario registrado -> actualizar state, AuthGate navega a Home
+                              final userModel = UserModel.fromAuthAndProfile(user, existing);
                               ref.read(authNotifierProvider.notifier).setUser(userModel);
                               if (mounted) setState(() => _isGoogleLoading = false);
+                            } else {
+                              // Usuario nuevo -> sheet de registro
+                              setState(() => _isGoogleLoading = false);
+                              final fullName = user.userMetadata?['full_name'] ?? user.userMetadata?['name'] ?? '';
+                              final parts = fullName.toString().split(' ');
+                              await showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                isDismissible: false,
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                                ),
+                                builder: (ctx) => Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: SignUpSheet(
+                                    prefilledNombre: parts.isNotEmpty ? parts.first : '',
+                                    prefilledApellido: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+                                    prefilledEmail: user.email ?? '',
+                                    isOAuthSignup: true,
+                                  ),
+                                ),
+                              );
                             }
                           } catch (e) {
-                            debugPrint('LoginPage -> Google sign in error: $e');
+                            debugPrint('LoginPage -> Google error: $e');
                             if (mounted) {
                               setState(() => _isGoogleLoading = false);
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -602,16 +620,19 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
         // Solo necesitamos crear el registro en la tabla usuario
         final user = ds.client.auth.currentUser;
         if (user != null) {
-          await ds.client.from('usuario').insert({
-            'id_usuario': user.id,
-            'nombre_usuario': nombreUsuario,
-            'email': email,
-            // 'telefono': telefono.isNotEmpty ? telefono : null,
-            // 'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
-            'es_creador': _esCreador,
-          });
+          // Intentar insertar, si ya existe (constraint) ignorar el error
+          try {
+            await ds.client.from('usuario').insert({
+              'id_usuario': user.id,
+              'nombre_usuario': nombreUsuario,
+              'email': email,
+              'es_creador': _esCreador,
+            });
+          } catch (insertErr) {
+            debugPrint('SignUpSheet -> insert error (may already exist): $insertErr');
+          }
 
-          // Refresh auth state to load the new user profile
+          // Cargar perfil actualizado
           final profile = await ds.client
               .from('usuario')
               .select()
@@ -619,8 +640,15 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
               .single();
 
           final userModel = UserModel.fromAuthAndProfile(user, profile);
-
           ref.read(authNotifierProvider.notifier).setUser(userModel);
+
+          if (mounted) {
+            // Cerrar el sheet y navegar al Home limpiando todo el stack
+            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomePage()),
+              (route) => false,
+            );
+          }
         }
       } else {
         // Registro tradicional con email y contraseña
@@ -662,23 +690,6 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
     return Consumer(builder: (context, localRef, child) {
-      // Close sheet on successful auth (like SignInSheet)
-      localRef.listen<AsyncValue<dynamic>>(authNotifierProvider, (previous, next) {
-        next.when(
-          data: (user) {
-            if (user != null) {
-              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-            }
-          },
-          loading: () {},
-          error: (e, st) {
-            // Show error only if currently submitting to avoid noise
-            if (_isSubmitting) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de inicio tras registro: $e')));
-            }
-          },
-        );
-      });
 
       final bottom = MediaQuery.of(context).viewInsets.bottom;
 
