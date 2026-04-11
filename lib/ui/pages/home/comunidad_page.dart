@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../../../providers/providers.dart';
 import '../../../domain/entities/creator.dart';
 import '../../widgets/search_bar.dart';
+import '../chat_page.dart';
 import '../creator_wall_page.dart';
 import '../profile/profile_page.dart';
 
@@ -231,10 +232,60 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                         leading: CircleAvatar(child: Text('${index + 1}')),
                         title: Text(c.nombreUsuario),
                         subtitle: Text(c.categoria ?? ''),
-                        onTap: () {
-                          Navigator.of(context).push(MaterialPageRoute(
-                            builder: (context) => CreatorWallPage(creator: c),
-                          ));
+                        onTap: () async {
+                          // Mostrar loading mientras verificamos suscripción
+                          showDialog<void>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => const Center(child: CircularProgressIndicator()),
+                          );
+
+                          bool isSubscribed = false;
+                          try {
+                            isSubscribed = await ref.read(
+                              isSubscribedProvider(c.idUsuario).future,
+                            );
+                          } catch (_) {}
+
+                          if (!mounted) return;
+
+                          if (isSubscribed) {
+                            // Ya suscrito → ir directo al chat
+                            String? chatId;
+                            try {
+                              final repo = ref.read(creatorRepositoryProvider);
+                              final planId = (c.planes != null && c.planes!.isNotEmpty)
+                                  ? c.planes![0]['id_plan'] as String?
+                                  : null;
+                              if (planId != null) {
+                                chatId = await repo.crearChatYParticipantes(
+                                  c.idUsuario, planId, false);
+                              } else {
+                                chatId = await repo.getOrCreateComunidadChatCreador(
+                                  c.idUsuario);
+                              }
+                            } catch (_) {}
+
+                            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                            if (!mounted) return;
+
+                            if (chatId != null) {
+                              Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => ChatPage(creator: c, chatId: chatId),
+                              ));
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No se pudo abrir el chat')),
+                              );
+                            }
+                          } else {
+                            // No suscrito → abrir perfil del creador
+                            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                            if (!mounted) return;
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (context) => CreatorWallPage(creator: c),
+                            ));
+                          }
                         },
                       );
                     },

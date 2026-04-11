@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/creator.dart';
 import '../../providers/providers.dart';
+import 'creator_wall_page.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -568,10 +569,20 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                   ],
                 ),
               ),
-              // IconButton(onPressed: () {}, icon: const Icon(Icons.call)),
-              // IconButton(onPressed: () {}, icon: const Icon(Icons.more_vert)),
             ],
           ),
+          actions: [
+            if (widget.creator.planes != null && widget.creator.planes!.isNotEmpty)
+              IconButton(
+                tooltip: 'Ver planes',
+                icon: const Icon(Icons.workspace_premium_outlined),
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => CreatorWallPage(creator: widget.creator),
+                  ));
+                },
+              ),
+          ],
         ),
         body: SafeArea(
           child: Column(
