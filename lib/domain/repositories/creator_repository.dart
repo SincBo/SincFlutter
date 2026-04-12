@@ -9,6 +9,9 @@ abstract class CreatorRepository {
   /// Verifica si el usuario autenticado está suscrito al creador dado.
   Future<bool> estaSuscrito(String idCreador);
 
+  /// Verifica si el usuario autenticado está suscrito a un plan concreto (por id_plan).
+  Future<bool> esSuscriptorDePlan(String idPlan);
+
   /// y registra los participantes. Devuelve el id del chat o null si falla.
   Future<String?> crearChatYParticipantes(String idCreador, String idPlan, bool isCreator);
 

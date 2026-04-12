@@ -32,6 +32,11 @@ class CreatorRepositoryImpl implements CreatorRepository {
   }
 
   @override
+  Future<bool> esSuscriptorDePlan(String idPlan) async {
+    return await datasource.esSuscriptorDePlan(idPlan);
+  }
+
+  @override
   Future<String?> crearChatYParticipantes(String idCreador, String idPlan, bool isCreator) async {
     try {
       return await datasource.crearChatYParticipantes(idCreador, idPlan, isCreator);

@@ -277,6 +277,27 @@ class SupabaseDataSource {
     }
   }
 
+  /// Verifica si el usuario autenticado está suscrito a un plan concreto por id_plan.
+  /// Consulta directamente la tabla `suscripcion`. Devuelve false en caso de error.
+  Future<bool> esSuscriptorDePlan(String idPlan) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) return false;
+
+      final res = await client
+          .from('suscripcion')
+          .select('id_plan')
+          .eq('id_usuario', user.id)
+          .eq('id_plan', idPlan)
+          .maybeSingle();
+
+      return res != null;
+    } catch (e) {
+      debugPrint('esSuscriptorDePlan -> error: $e');
+      return false;
+    }
+  }
+
   /// Checks if the current authenticated user is subscribed to the given creator
   /// by calling the Postgres RPC `esta_suscrito(p_id_usuario, p_id_creador)`.
   /// Returns `false` on error or when unauthenticated.

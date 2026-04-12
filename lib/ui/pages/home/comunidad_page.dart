@@ -233,6 +233,28 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                         title: Text(c.nombreUsuario),
                         subtitle: Text(c.categoria ?? ''),
                         onTap: () async {
+                          // Si el creador no tiene planes configurados, mostrar aviso
+                          final tienePlanes = c.planes != null && c.planes!.isNotEmpty;
+                          if (!tienePlanes) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Row(
+                                  children: const [
+                                    Icon(Icons.construction, color: Colors.white),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Este creador aún está construyendo su perfil. ¡Vuelve pronto!',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                            return;
+                          }
+
                           // Mostrar loading mientras verificamos suscripción
                           showDialog<void>(
                             context: context,
@@ -250,33 +272,51 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                           if (!mounted) return;
 
                           if (isSubscribed) {
-                            // Ya suscrito → ir directo al chat
-                            String? chatId;
-                            try {
-                              final repo = ref.read(creatorRepositoryProvider);
-                              final planId = (c.planes != null && c.planes!.isNotEmpty)
-                                  ? c.planes![0]['id_plan'] as String?
-                                  : null;
-                              if (planId != null) {
-                                chatId = await repo.crearChatYParticipantes(
-                                  c.idUsuario, planId, false);
-                              } else {
-                                chatId = await repo.getOrCreateComunidadChatCreador(
-                                  c.idUsuario);
-                              }
-                            } catch (_) {}
+                            // Verificar si el plan suscrito es Comunidad (planes[0])
+                            final comunidadPlanId = c.planes![0]['id_plan'] as String?;
 
-                            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                            bool esComunidad = false;
+                            if (comunidadPlanId != null) {
+                              try {
+                                final repo = ref.read(creatorRepositoryProvider);
+                                esComunidad = await repo.esSuscriptorDePlan(comunidadPlanId);
+                              } catch (_) {}
+                            }
+
                             if (!mounted) return;
 
-                            if (chatId != null) {
-                              Navigator.of(context).push(MaterialPageRoute(
-                                builder: (_) => ChatPage(creator: c, chatId: chatId),
-                              ));
+                            if (esComunidad) {
+                              // Suscrito a Comunidad → ir directo al chat
+                              String? chatId;
+                              try {
+                                final repo = ref.read(creatorRepositoryProvider);
+                                if (comunidadPlanId != null) {
+                                  chatId = await repo.crearChatYParticipantes(
+                                      c.idUsuario, comunidadPlanId, false);
+                                } else {
+                                  chatId = await repo.getOrCreateComunidadChatCreador(c.idUsuario);
+                                }
+                              } catch (_) {}
+
+                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                              if (!mounted) return;
+
+                              if (chatId != null) {
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => ChatPage(creator: c, chatId: chatId),
+                                ));
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No se pudo abrir el chat')),
+                                );
+                              }
                             } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('No se pudo abrir el chat')),
-                              );
+                              // Suscrito pero NO a Comunidad (e.g., Fellow) → mostrar perfil
+                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+                              if (!mounted) return;
+                              Navigator.of(context).push(MaterialPageRoute(
+                                builder: (context) => CreatorWallPage(creator: c),
+                              ));
                             }
                           } else {
                             // No suscrito → abrir perfil del creador

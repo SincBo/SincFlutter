@@ -271,26 +271,54 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                     //
                     // const SizedBox(height: 12),
 
-                    // SUBSCRIPTION ROWS (mock data)
-                    _subscriptionRow(
-                      context,
-                      ref: localRef,
-                      title: 'Comunidad SINC',
-                      price: '${creator.planes?[0]['precio']}',
-                      description:
-                          'Añade el precio para ingresar a tu comunidad, en este nivel, tu comunidad recibirá mensajes, notas de voz, imágenes.',
-                      planId: creator.planes?[0]['id_plan'],
-                    ),
-                    const SizedBox(height: 16),
-                    _subscriptionRow(
-                      context,
-                      ref: localRef,
-                      title: 'Fellow',
-                      price: '${creator.planes?[1]['precio']}',
-                      description:
-                          'Esta es una sección más cercana a tu comunidad, con espacios limitados. Quienes están en este apartado pagarán un monto mayor.',
-                      planId: creator.planes?[1]['id_plan'],
-                    ),
+                    // SUBSCRIPTION ROWS
+                    if (creator.planes == null || creator.planes!.isEmpty) ...[
+                      // Sin planes → aviso de perfil en construcción
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.amber.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.construction, color: Colors.amber.shade700, size: 28),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Este creador aún está construyendo su perfil. ¡Vuelve pronto para ver sus planes!',
+                                style: TextStyle(fontSize: 14, color: Colors.black87),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      if (creator.planes!.isNotEmpty)
+                        _subscriptionRow(
+                          context,
+                          ref: localRef,
+                          title: 'Comunidad SINC',
+                          price: '${creator.planes![0]['precio']}',
+                          description:
+                              'Añade el precio para ingresar a tu comunidad, en este nivel, tu comunidad recibirá mensajes, notas de voz, imágenes.',
+                          planId: creator.planes![0]['id_plan'],
+                        ),
+                      if (creator.planes!.length > 1) ...[
+                        const SizedBox(height: 16),
+                        _subscriptionRow(
+                          context,
+                          ref: localRef,
+                          title: 'Fellow',
+                          price: '${creator.planes![1]['precio']}',
+                          description:
+                              'Esta es una sección más cercana a tu comunidad, con espacios limitados. Quienes están en este apartado pagarán un monto mayor.',
+                          planId: creator.planes![1]['id_plan'],
+                        ),
+                      ],
+                    ],
 
                     const SizedBox(height: 20),
 
