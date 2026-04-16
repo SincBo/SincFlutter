@@ -30,9 +30,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   Future<void> _loadCounts() async {
     try {
       final ds = ref.read(supabaseDataSourceProvider);
-      // Fellows count placeholder: number of creators of tipo Fellow
-      final fellows = await ds.obtenerCreadoresPorTipo('Fellow', limit: 200, offset: 0);
-      // Solicitudes count placeholder: replace with RPC/table query for pending requests
+      // Fellows count: personas que compraron el plan Fellow del creador actual
+      final fellows = await ds.obtenerUsuarioPorTipo('Fellow', limit: 200, offset: 0);
+      // Solicitudes count placeholder
       final solicitudes = <dynamic>[];
       setState(() {
         _fellowsCount = fellows.length;
