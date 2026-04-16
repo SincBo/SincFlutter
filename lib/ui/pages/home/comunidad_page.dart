@@ -177,7 +177,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                     children: [
                       CircleAvatar(
                         radius: 24,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                         child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
                       ),
                       const SizedBox(height: 6),
@@ -228,8 +228,9 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                         );
                       }
                       final c = _creators[index];
+                      final initials = c.nombreUsuario.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join().toUpperCase();
                       return ListTile(
-                        leading: CircleAvatar(child: Text('${index + 1}')),
+                        leading: CircleAvatar(child: Text(initials.isNotEmpty ? initials : '?')),
                         title: Text(c.nombreUsuario),
                         subtitle: Text(c.categoria ?? ''),
                         onTap: () async {
