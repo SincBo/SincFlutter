@@ -755,12 +755,12 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
                     controller: _codigoInvController,
                     decoration: const InputDecoration(labelText: 'Código de invitación (opcional)'),
                   ),
-                  const SizedBox(height: 10),
-                  SwitchListTile(
-                    value: _esCreador,
-                    onChanged: (v) => setState(() => _esCreador = v),
-                    title: const Text('Soy creador de contenido'),
-                  ),
+                  // const SizedBox(height: 10),
+                  // SwitchListTile(
+                  //   value: _esCreador,
+                  //   onChanged: (v) => setState(() => _esCreador = v),
+                  //   title: const Text('Soy creador de contenido'),
+                  // ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,

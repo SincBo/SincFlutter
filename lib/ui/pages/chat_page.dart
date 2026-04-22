@@ -402,14 +402,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
                             m.text,
                             style: TextStyle(color: textColor),
                           ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _formatTime(m.timestamp),
-                          style: TextStyle(
-                            color: (showImages ? Colors.black54 : textColor.withValues(alpha: 0.7)),
-                            fontSize: 11,
-                          ),
-                        ),
+                        //TODO: tenemos que revisar el timestamp que nos devuelve el backend porque ahora mismo no se muestra bien. De momento lo ocultamos para no mostrar info errónea, pero la idea es mostrarlo formateado debajo del mensaje (alineado a la derecha para mensajes propios, a la izquierda para mensajes del creador)
+                        // const SizedBox(height: 6),
+                        // Text(
+                        //   _formatTime(m.timestamp),
+                        //   style: TextStyle(
+                        //     color: (showImages ? Colors.black54 : textColor.withValues(alpha: 0.7)),
+                        //     fontSize: 11,
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),

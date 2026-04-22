@@ -212,7 +212,7 @@ class GananciasPage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     Text('Tasa de servicio SINC', style: theme.textTheme.bodyMedium),
-                    Text('Founders Fee ${(foundersFeeRate * 100).toStringAsFixed(0)}%', style: const TextStyle(color: Colors.black54)),
+                    Text('Founders Fee ${(foundersFeeRate * 100).toStringAsFixed(0)}% mas 1bs por transacción', style: const TextStyle(color: Colors.black54)),
                     const SizedBox(height: 6),
                     Row(mainAxisAlignment: MainAxisAlignment.end, children: [Text('- ${feeMonto.toStringAsFixed(0)} Bs', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.redAccent))]),
                     const Divider(height: 24),
