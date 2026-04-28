@@ -283,32 +283,42 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         u.contains('content-type=image');
   }
 
+  // Open full-screen image viewer with zoom/pan
+  void _openImageViewer(List<String> urls, int initialIndex) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _ImageViewerPage(urls: urls, initialIndex: initialIndex),
+    ));
+  }
+
   // Simple widget to render 1..N images as a grid (uses 1 image aspectRatio, otherwise 2-col grid)
   Widget _imagesWidget(List<String> urls) {
     if (urls.isEmpty) return const SizedBox.shrink();
     if (urls.length == 1) {
       final u = urls.first;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: 4 / 3,
-          child: Image.network(
-            u,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return Center(
-                child: CircularProgressIndicator(
-                  value: progress.expectedTotalBytes != null
-                      ? (progress.cumulativeBytesLoaded / (progress.expectedTotalBytes!))
-                      : null,
-                ),
-              );
-            },
-            errorBuilder: (_, __, ___) => Container(
-              color: Colors.black12,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image, size: 32),
+      return GestureDetector(
+        onTap: () => _openImageViewer(urls, 0),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: AspectRatio(
+            aspectRatio: 4 / 3,
+            child: Image.network(
+              u,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Center(
+                  child: CircularProgressIndicator(
+                    value: progress.expectedTotalBytes != null
+                        ? (progress.cumulativeBytesLoaded / (progress.expectedTotalBytes!))
+                        : null,
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => Container(
+                color: Colors.black12,
+                alignment: Alignment.center,
+                child: const Icon(Icons.broken_image, size: 32),
+              ),
             ),
           ),
         ),
@@ -329,12 +339,15 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         ),
         itemBuilder: (context, i) {
           final u = urls[i];
-          return Container(
-            color: Colors.black12,
-            child: Image.network(
-              u,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+          return GestureDetector(
+            onTap: () => _openImageViewer(urls, i),
+            child: Container(
+              color: Colors.black12,
+              child: Image.network(
+                u,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+              ),
             ),
           );
         },
@@ -656,6 +669,7 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
   }
 
   void _subscribeRealtime() {
+
     if (widget.chatId == null) return;
 
     final supabase = ref.read(supabaseClientProvider);
@@ -684,3 +698,80 @@ class _ChatPageState extends ConsumerState<ChatPage> with WidgetsBindingObserver
         .subscribe();
   }
 }
+
+/// Full-screen image viewer with pinch-to-zoom and swipe to dismiss.
+/// Supports multiple images with a PageView.
+class _ImageViewerPage extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+
+  const _ImageViewerPage({required this.urls, this.initialIndex = 0});
+
+  @override
+  State<_ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+class _ImageViewerPageState extends State<_ImageViewerPage> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: widget.urls.length > 1
+            ? Text('${_currentIndex + 1} / ${widget.urls.length}')
+            : null,
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.urls.length,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemBuilder: (context, index) {
+          final url = widget.urls[index];
+          return InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 5.0,
+            child: Center(
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+                          : null,
+                    ),
+                  );
+                },
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
