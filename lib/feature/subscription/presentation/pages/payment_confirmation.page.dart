@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import '../../providers/providers.dart';
+import '../../../../core/providers/providers.dart';
 
 /// Página de confirmación de pago.
 ///

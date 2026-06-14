@@ -2,12 +2,14 @@ import 'dart:ffi';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/widgets/search_bar.dart';
-import '../../../providers/providers.dart';
-import '../../../data/models/creator_por_tipo_model.dart';
-import '../../../domain/entities/creator.dart';
-import '../../../feature/chat/presentation/pages/chat.page.dart';
-import '../profile/profile_page.dart';
+import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/widgets/search_bar.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../../data/models/creator_por_tipo_model.dart';
+import '../../../../domain/entities/creator.dart';
+import '../../../chat/presentation/pages/chat.page.dart';
+import '../../../profile/presentation/pages/profile.page.dart';
 
 class FellowPage extends ConsumerStatefulWidget {
   const FellowPage({Key? key}) : super(key: key);
@@ -171,8 +173,8 @@ class _FellowPageState extends ConsumerState<FellowPage> {
                               showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                               String? chatId;
                               try {
-                                final repo = ref.read(creatorRepositoryProvider);
-                                chatId = await repo.crearChatYParticipantes(c.idCreador, c.idPlan, false);
+                                final repo = ref.read(chatRepositoryProvider);
+                                chatId = await repo.createChatAndParticipants(c.idCreador, c.idPlan, false);
                               } catch (e) {
                                 chatId = null;
                               }

@@ -1,17 +1,15 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../data/datasources/supabase_datasource.dart';
-import '../data/repositories/auth_repository_impl.dart';
-import '../data/repositories/creator_repository_impl.dart';
-import '../domain/repositories/auth_repository.dart';
-import '../domain/repositories/creator_repository.dart';
-import '../domain/entities/user.dart';
-import '../domain/entities/creator.dart';
-import '../domain/entities/message.dart';
-import '../domain/entities/chat_con_creador.dart';
-import '../providers/auth_notifier.dart';
+import '../../data/datasources/supabase_datasource.dart';
+import '../../data/models/message_model.dart';
+import '../../data/repositories/auth_repository_impl.dart';
+import '../../domain/repositories/auth_repository.dart';
+import 'auth_notifier_provider.dart';
+import 'chat_repository_provider.dart';
+import 'creator_repository_provider.dart';
 
 
 /// ----------------------
@@ -45,22 +43,13 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 /// ----------------------
 /// FIXED: Correct function syntax () { ... }
 /// FIXED: Correct import for StateNotifierProvider
-final authNotifierProvider =
-StateNotifierProvider<AuthStateNotifier, AsyncValue<UserEntity?>>(
-      (ref) {
-    final repo = ref.read(authRepositoryProvider);
-    return AuthStateNotifier(repo);
-  },
-);
+
 
 
 /// ----------------------
 /// CREATOR REPOSITORY
 /// ----------------------
-final creatorRepositoryProvider = Provider<CreatorRepository>((ref) {
-  final ds = ref.read(supabaseDataSourceProvider);
-  return CreatorRepositoryImpl(ds);
-});
+
 
 
 /// ----------------------
@@ -73,18 +62,14 @@ final creatorsProvider = FutureProvider((ref) async {
   if (user == null) return [];
 
   final repo = ref.read(creatorRepositoryProvider);
-  return await repo.obtenerCreadores();
+  return await repo.getCreators();
 });
 
 
 /// ----------------------
 /// SEARCH PROVIDER
 /// ----------------------
-final creatorsSearchProvider =
-FutureProvider.family<List<CreatorEntity>, String>((ref, query) async {
-  final repo = ref.read(creatorRepositoryProvider);
-  return repo.buscarCreadores(query);
-});
+
 
 
 /// ----------------------
@@ -92,9 +77,9 @@ FutureProvider.family<List<CreatorEntity>, String>((ref, query) async {
 /// ----------------------
 final isSubscribedProvider =
 FutureProvider.family<bool, String>((ref, idCreador) async {
-  final repo = ref.read(creatorRepositoryProvider);
+  final repo = ref.read(paymentRepositoryProvider);
   try {
-    return await repo.estaSuscrito(idCreador);
+    return await repo.isSubscribedToCreator(idCreador);
   } catch (e) {
     debugPrint('isSubscribedProvider -> error: $e');
     return false;
@@ -106,27 +91,14 @@ FutureProvider.family<bool, String>((ref, idCreador) async {
 /// MESSAGES PROVIDER
 /// ----------------------
 final messagesProvider =
-FutureProvider.family<List<MessageEntity>, String>((ref, idChat) async {
-  final repo = ref.read(creatorRepositoryProvider);
-  try {
-    return await repo.obtenerMensajes(idChat);
-  } catch (e) {
-    debugPrint('messagesProvider -> error: $e');
-    return <MessageEntity>[];
-  }
+FutureProvider.family<List<MessageModel>, String>((ref, idChat) async {
+  final repo = ref.read(chatRepositoryProvider);
+
+  return await repo.getMessages(idChat);
 });
 
 
 /// ----------------------
 /// CHATS SUBSCRIBED PROVIDER
 /// ----------------------
-final chatsSuscritosProvider =
-FutureProvider<List<ChatConCreadorEntity>>((ref) async {
-  final repo = ref.read(creatorRepositoryProvider);
-  try {
-    return await repo.obtenerChatsSuscritos();
-  } catch (e) {
-    debugPrint('chatsSuscritosProvider -> error: $e');
-    return <ChatConCreadorEntity>[];
-  }
-});
+

@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
+import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
 import 'dart:convert';
 
-import '../../../providers/providers.dart';
-import '../../../domain/entities/creator.dart';
-import '../../widgets/search_bar.dart';
-import '../chat_page.dart';
-import '../creator_wall_page.dart';
-import '../profile/profile_page.dart';
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/providers/creator_repository_provider.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../../core/widgets/search_bar.dart';
+import '../../../../domain/entities/creator.dart';
+import '../../../chat/presentation/pages/chat.page.dart';
+import '../../../creator_profile/presentation/pages/creator_profile.page.dart';
+import '../../../profile/presentation/pages/profile.page.dart';
 
 class ComunidadPage extends ConsumerStatefulWidget {
   const ComunidadPage({Key? key}) : super(key: key);
@@ -88,7 +92,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
     try {
       final repo = ref.read(creatorRepositoryProvider);
       final offset = _page * _pageSize;
-      final results = await repo.buscarCreadores(_searchQuery, limit: _pageSize, offset: offset);
+      final results = await repo.searchCreators(_searchQuery, limit: _pageSize, offset: offset);
       debugPrint('ComunidadPage._fetchPage -> fetched ${results.length} items for query "$_searchQuery" offset $offset');
       if (results.isNotEmpty) {
         try {
@@ -101,8 +105,8 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
       if (results.isEmpty) {
         // Try a direct datasource RPC fallback (in case RLS or table selection returns empty)
         try {
-          final ds = ref.read(supabaseDataSourceProvider);
-          final rpcModels = await ds.obtenerCreadores();
+          final ds = ref.read(creatorRepositoryProvider);
+          final rpcModels = await ds.getCreators();
           final rpcEntities = rpcModels.cast<CreatorEntity>();
           if (rpcEntities.isNotEmpty) {
             debugPrint('ComunidadPage._fetchPage -> populated from RPC fallback with ${rpcEntities.length} items');
@@ -265,8 +269,7 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
 
                           bool isSubscribed = false;
                           try {
-                            isSubscribed = await ref.read(
-                              isSubscribedProvider(c.idUsuario).future,
+                            isSubscribed = await ref.read(isSubscribedProvider(c.idUsuario).future,
                             );
                           } catch (_) {}
 
@@ -279,8 +282,8 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                             bool esComunidad = false;
                             if (comunidadPlanId != null) {
                               try {
-                                final repo = ref.read(creatorRepositoryProvider);
-                                esComunidad = await repo.esSuscriptorDePlan(comunidadPlanId);
+                                final repo = ref.read(paymentRepositoryProvider);
+                                esComunidad = await repo.isSubscribedToPlan(comunidadPlanId);
                               } catch (_) {}
                             }
 
@@ -290,12 +293,12 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                               // Suscrito a Comunidad → ir directo al chat
                               String? chatId;
                               try {
-                                final repo = ref.read(creatorRepositoryProvider);
+                                final repo = ref.read(chatRepositoryProvider);
                                 if (comunidadPlanId != null) {
-                                  chatId = await repo.crearChatYParticipantes(
+                                  chatId = await repo.createChatAndParticipants(
                                       c.idUsuario, comunidadPlanId, false);
                                 } else {
-                                  chatId = await repo.getOrCreateComunidadChatCreador(c.idUsuario);
+                                  chatId = await repo.getOrCreateComunidadChat(c.idUsuario);
                                 }
                               } catch (_) {}
 

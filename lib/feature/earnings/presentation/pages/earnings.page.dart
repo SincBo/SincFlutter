@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../../providers/providers.dart';
-import '../../../../../data/models/ganancias_mes_model.dart';
-import '../../../../../data/models/top_pago_mes_model.dart';
-import '../../../../../ui/pages/profile/profile_page.dart';
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../../data/models/ganancias_mes_model.dart';
+import '../../../../data/models/top_pago_mes_model.dart';
+import '../../../profile/presentation/pages/profile.page.dart';
 
 class GananciasPage extends ConsumerWidget {
   final String? creadorId;

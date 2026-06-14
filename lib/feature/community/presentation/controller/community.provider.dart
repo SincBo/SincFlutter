@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/providers/creator_repository_provider.dart';
+import 'community.controller.dart';
+import 'community.state.dart';
 
 final communityControllerProvider =
 StateNotifierProvider<CommunityController, CommunityState>((ref) {

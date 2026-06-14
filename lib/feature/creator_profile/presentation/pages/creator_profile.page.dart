@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../domain/entities/creator.dart';
-import '../../providers/providers.dart';
-import '../../feature/subscription/presentation/pages/payment_confirmation.page.dart';
+import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
+import '../../../../domain/entities/creator.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../subscription/presentation/pages/payment_confirmation.page.dart';
 
 class CreatorWallPage extends StatefulWidget {
   final CreatorEntity creator;
@@ -431,7 +432,7 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                     }
 
                     // 1) Crear transacción en backend
-                    final repo = ref.read(creatorRepositoryProvider);
+                    final repo = ref.read(paymentRepositoryProvider);
                     showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                     String? idTransaccion;
                     try {

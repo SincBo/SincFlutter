@@ -39,11 +39,12 @@ dependencies:
   supabase_flutter: ^2.10.3
   flutter_dotenv: ^6.0.0
   image_picker: ^1.0.7
-  font_awesome_flutter: ^10.7.0
+  font_awesome_flutter: ^11.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_native_splash: ^2.4.8
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -52,7 +53,6 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
-  flutter_native_splash: ^2.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -99,22 +99,23 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/sinc_icon.png"          # Fondo turquesa + logo blanco (iOS y Android clásico)
+  image_path: "assets/images/sinc.png"          # Fondo turquesa + logo blanco (iOS y Android clásico)
   adaptive_icon_background: "#04CFB8"                 # Color de fondo para Android adaptive icon
-  adaptive_icon_foreground: "assets/images/sinc_icon_fg.png"  # Logo blanco sobre transparente
+  adaptive_icon_foreground: "assets/images/sinc.png"  # Logo blanco sobre transparente
   min_sdk_android: 21
   remove_alpha_ios: true                              # iOS no permite transparencia
 
 # Configuración del splash screen
 flutter_native_splash:
-  color: "#000000"  # Fondo turquesa (color de la marca)
+  color: "#04CFB8"  # Fondo turquesa (color de la marca)
   image: "assets/images/sinc.png"  # Logo blanco sobre fondo turquesa
+  fullscreen: true
   android: true
   ios: false
   web: false
 
   android_12:
-    color: "#000000"
+    color: "#04CFB8"
     image: "assets/images/sinc.png"
 
   ios_content_mode: center

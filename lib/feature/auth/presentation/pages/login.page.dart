@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/providers/providers.dart';
 import '../../../../data/models/user_model.dart';
-import '../../../../providers/providers.dart';
-import '../../../home/presentation/screens/home.page.dart';
+import '../../../home/presentation/pages/home.page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});

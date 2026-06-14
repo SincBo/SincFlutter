@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/providers.dart';
+
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/providers/providers.dart';
 
 class ResetPasswordPage extends ConsumerStatefulWidget {
   const ResetPasswordPage({Key? key}) : super(key: key);
@@ -54,9 +56,7 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      await ref.read(authNotifierProvider.notifier).changePassword(
-            newPassword: newPassword,
-          );
+      await ref.read(authNotifierProvider.notifier).changePassword(newPassword);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

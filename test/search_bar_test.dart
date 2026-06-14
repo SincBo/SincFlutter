@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sincboflutter/ui/widgets/search_bar.dart';
+import 'package:sincboflutter/core/widgets/search_bar.dart';
 
 void main() {
   testWidgets('DebouncedSearchBar calls onChanged after debounce', (WidgetTester tester) async {

@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sincboflutter/ui/pages/chat_page.dart';
-import 'package:sincboflutter/ui/pages/home/fellow_creator_page.dart';
-import 'package:sincboflutter/ui/pages/home/fellow_page.dart';
-import 'package:sincboflutter/ui/pages/home/ganancias_page.dart';
-import 'package:sincboflutter/ui/pages/home/suscritos_page.dart';
+import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
+import 'package:sincboflutter/feature/chat/presentation/pages/chat.page.dart';
+import 'package:sincboflutter/feature/fellow/presentation/pages/fellow_creator.page.dart';
+import 'package:sincboflutter/feature/fellow/presentation/pages/fellow.page.dart';
+import 'package:sincboflutter/feature/earnings/presentation/pages/earnings.page.dart';
+import 'package:sincboflutter/feature/subscription/presentation/pages/subscription.page.dart';
 
+import '../../../../core/providers/auth_notifier_provider.dart';
+import '../../../../core/providers/creator_repository_provider.dart';
 import '../../../../domain/entities/creator.dart';
-import '../../../../providers/providers.dart';
-import '../../../auth/presentation/screens/login.page.dart';
-import '../../../../ui/pages/home/comunidad_page.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../auth/presentation/pages/login.page.dart';
+import '../../../community/presentation/pages/comunidad_page.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -155,7 +158,9 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
     try {
       // Fetch creators and try to find current user as creator entity
       final repo = ref.read(creatorRepositoryProvider);
-      final creators = await repo.obtenerCreadores();
+      final creators = await repo.getCreators();
+      
+      final repoChat = ref.read(chatRepositoryProvider);
 
       CreatorEntity? me;
       if (creators.isNotEmpty) {
@@ -189,10 +194,10 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
       // Si el creador tiene planes, usar el flujo normal con el primer plan
       if (me.planes != null && me.planes!.isNotEmpty) {
         final planId = me.planes!.first['id_plan'] as String;
-        chatId = await repo.crearChatYParticipantes(me.idUsuario, planId, false);
+        chatId = await repoChat.createChatAndParticipants(me.idUsuario, planId, false);
       } else {
         // Sin planes: buscar o crear el chat de comunidad directamente
-        chatId = await repo.getOrCreateComunidadChatCreador(me.idUsuario);
+        chatId = await repoChat.getOrCreateComunidadChat(me.idUsuario);
       }
 
       if (!mounted) return;

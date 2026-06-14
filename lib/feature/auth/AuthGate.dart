@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/feature/home/presentation/pages/home.page.dart';
 import 'package:sincboflutter/feature/auth/presentation/pages/login.page.dart';
 
-import 'core/providers/providers.dart';
+import '../../core/providers/auth_notifier_provider.dart';
+import '../../core/providers/providers.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
