@@ -67,6 +67,10 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserEntity?>> {
   Future<void> resetPassword(String email) =>
       repository.resetPasswordForEmail(email);
 
+  void setUser(UserEntity user) {
+    state = AsyncValue.data(user);
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

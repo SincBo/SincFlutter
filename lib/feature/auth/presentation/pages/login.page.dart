@@ -829,7 +829,7 @@ class _ForgotPasswordSheetState extends ConsumerState<_ForgotPasswordSheet> {
     setState(() => _isSubmitting = true);
 
     try {
-      await ref.read(authNotifierProvider.notifier).resetPasswordForEmail(email);
+      await ref.read(authNotifierProvider.notifier).resetPassword(email);
 
       if (mounted) {
         Navigator.of(context).pop();
