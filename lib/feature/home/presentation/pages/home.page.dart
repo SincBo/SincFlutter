@@ -163,9 +163,15 @@ class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> 
       final repoChat = ref.read(chatRepositoryProvider);
 
       CreatorEntity? me;
-      if (creators.isNotEmpty) {
-        me = creators.firstWhere((c) => c.idUsuario == widget.userId, orElse: () => creators.first);
+
+      for (final creator in creators) {
+        if (creator.idUsuario == widget.userId) {
+          me = creator;
+          break;
+        }
       }
+
+      me ??= creators.isNotEmpty ? creators.first : null;
 
       if (me == null) {
         // Fallback: build a minimal CreatorEntity from auth profile
