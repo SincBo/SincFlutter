@@ -6,6 +6,7 @@ class CommunityState {
   final bool loadingMore;
   final bool hasMore;
   final String query;
+  final String? error;
 
   const CommunityState({
     this.creators = const [],
@@ -13,6 +14,7 @@ class CommunityState {
     this.loadingMore = false,
     this.hasMore = true,
     this.query = '',
+    this.error,
   });
 
   CommunityState copyWith({
@@ -21,6 +23,8 @@ class CommunityState {
     bool? loadingMore,
     bool? hasMore,
     String? query,
+    String? error,
+    bool clearError = false,
   }) {
     return CommunityState(
       creators: creators ?? this.creators,
@@ -28,6 +32,7 @@ class CommunityState {
       loadingMore: loadingMore ?? this.loadingMore,
       hasMore: hasMore ?? this.hasMore,
       query: query ?? this.query,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }

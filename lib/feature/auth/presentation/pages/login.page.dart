@@ -1,10 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:sincboflutter/core/providers/auth_repository_provider.dart';
 
 import '../../../../core/providers/auth_notifier_provider.dart';
-import '../../../../core/providers/providers.dart';
-import '../../../../data/models/user_model.dart';
+import '../../../../domain/entities/user.dart';
 import '../../../home/presentation/pages/home.page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -16,6 +18,7 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   bool _isGoogleLoading = false;
+  bool _isAppleLoading = false;
 
   void _showSignInSheet(BuildContext context) {
     showModalBottomSheet(
@@ -149,112 +152,80 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         onPressed: _isGoogleLoading ? null : () async {
                           setState(() => _isGoogleLoading = true);
                           try {
-                            final ds = ref.read(supabaseDataSourceProvider);
+                            final ds = ref.read(authRepositoryProvider);
 
-                            // ── PASO 0: si ya hay sesión activa verificar perfil ──
-                            final currentAuthUser = ds.client.auth.currentUser;
-                            if (currentAuthUser != null) {
-                              debugPrint('LoginPage -> Sesión activa: ${currentAuthUser.id}');
-                              Map<String, dynamic>? existingProfile;
-                              for (int i = 1; i <= 3; i++) {
-                                try {
-                                  existingProfile = await ds.client
-                                      .from('usuario').select()
-                                      .eq('id_usuario', currentAuthUser.id)
-                                      .maybeSingle();
-                                  if (existingProfile != null) break;
-                                } catch (_) {}
-                                if (i < 3) await Future.delayed(const Duration(milliseconds: 500));
-                              }
-                              if (existingProfile != null) {
-                                debugPrint('LoginPage -> Perfil existe, actualizando state');
-                                final userModel = UserModel.fromAuthAndProfile(currentAuthUser, existingProfile);
-                                ref.read(authNotifierProvider.notifier).setUser(userModel);
-                                // AuthGate detectará el cambio y navegará a Home
-                                if (mounted) setState(() => _isGoogleLoading = false);
-                                return;
-                              }
-                              debugPrint('LoginPage -> Sesión sin perfil, cerrando sesión');
-                              await ds.client.auth.signOut();
+                            // PASO 0: si ya hay sesión activa con perfil, usarla directamente
+                            final existingUser = await ds.getCurrentUser();
+                            if (existingUser != null) {
+                              ref.read(authNotifierProvider.notifier).setUser(existingUser);
+                              if (mounted) setState(() => _isGoogleLoading = false);
+                              return;
                             }
 
-                            debugPrint('LoginPage -> Iniciando OAuth Google');
-                            final oauthUser = await ds.signInWithGoogle();
-                            final user = oauthUser ?? ds.client.auth.currentUser;
-
-                            debugPrint('LoginPage -> user: ${user?.id}, email: ${user?.email}');
+                            // PASO 1: iniciar OAuth Google
+                            final oauthUser = await ds.signInGoogle();
 
                             if (!mounted) return;
-                            if (user == null) {
-                              setState(() => _isGoogleLoading = false);
+
+                            if (oauthUser != null) {
+                              // Usuario existente con perfil
+                              ref.read(authNotifierProvider.notifier).setUser(oauthUser);
+                              if (mounted) setState(() => _isGoogleLoading = false);
+                              return;
+                            }
+
+                            // PASO 2: OAuth puede haber funcionado pero sin perfil aún — reintentar
+                            await Future.delayed(const Duration(milliseconds: 800));
+
+                            UserEntity? fullUser;
+                            for (int i = 1; i <= 5; i++) {
+                              fullUser = await ds.getCurrentUser();
+                              if (fullUser != null) break;
+                              await Future.delayed(const Duration(milliseconds: 600));
+                            }
+
+                            if (!mounted) return;
+
+                            if (fullUser != null) {
+                              ref.read(authNotifierProvider.notifier).setUser(fullUser);
+                              if (mounted) setState(() => _isGoogleLoading = false);
+                              return;
+                            }
+
+                            // PASO 3: verificar si OAuth funcionó (usuario nuevo sin perfil)
+                            final isAuth = await ds.isAuthenticated();
+                            setState(() => _isGoogleLoading = false);
+
+                            if (!isAuth) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('No se pudo iniciar sesión con Google')),
                               );
                               return;
                             }
 
-                            // Esperar a que la sesión se estabilice
-                            await Future.delayed(const Duration(milliseconds: 800));
-
-                            // Buscar perfil con retry
-                            Map<String, dynamic>? existing;
-                            for (int i = 1; i <= 5; i++) {
-                              try {
-                                existing = await ds.client
-                                    .from('usuario').select()
-                                    .eq('id_usuario', user.id)
-                                    .maybeSingle();
-                                debugPrint('LoginPage -> Intento $i: perfil=${existing != null}');
-                                if (existing != null) break;
-                              } catch (e) {
-                                debugPrint('LoginPage -> Intento $i error: $e');
-                              }
-                              await Future.delayed(const Duration(milliseconds: 600));
-                            }
-
-                            // Fallback por email
-                            if (existing == null && user.email != null) {
-                              try {
-                                existing = await ds.client
-                                    .from('usuario').select()
-                                    .eq('email', user.email!)
-                                    .maybeSingle();
-                                debugPrint('LoginPage -> Por email: perfil=${existing != null}');
-                              } catch (e) {
-                                debugPrint('LoginPage -> email fallback error: $e');
-                              }
-                            }
+                            // Usuario nuevo — obtener datos para pre-llenar el form
+                            final authInfo = await ds.getAuthUserInfo();
+                            final fullName = authInfo?.displayName ?? '';
+                            final parts = fullName.split(' ');
 
                             if (!mounted) return;
-
-                            if (existing != null) {
-                              // Usuario registrado -> actualizar state, AuthGate navega a Home
-                              final userModel = UserModel.fromAuthAndProfile(user, existing);
-                              ref.read(authNotifierProvider.notifier).setUser(userModel);
-                              if (mounted) setState(() => _isGoogleLoading = false);
-                            } else {
-                              // Usuario nuevo -> sheet de registro
-                              setState(() => _isGoogleLoading = false);
-                              final fullName = user.userMetadata?['full_name'] ?? user.userMetadata?['name'] ?? '';
-                              final parts = fullName.toString().split(' ');
-                              await showModalBottomSheet<void>(
-                                context: context,
-                                isScrollControlled: true,
-                                isDismissible: false,
-                                shape: const RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                            await showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              isDismissible: false,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                              ),
+                              builder: (ctx) => Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: SignUpSheet(
+                                  prefilledNombre: parts.isNotEmpty ? parts.first : '',
+                                  prefilledApellido: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+                                  prefilledEmail: authInfo?.email ?? '',
+                                  isOAuthSignup: true,
                                 ),
-                                builder: (ctx) => Padding(
-                                  padding: const EdgeInsets.only(top: 8.0),
-                                  child: SignUpSheet(
-                                    prefilledNombre: parts.isNotEmpty ? parts.first : '',
-                                    prefilledApellido: parts.length > 1 ? parts.sublist(1).join(' ') : '',
-                                    prefilledEmail: user.email ?? '',
-                                    isOAuthSignup: true,
-                                  ),
-                                ),
-                              );
-                            }
+                              ),
+                            );
                           } catch (e) {
                             debugPrint('LoginPage -> Google error: $e');
                             if (mounted) {
@@ -267,108 +238,125 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         },
                       ),
                     ),
-                    const SizedBox(width: 12),
-
-                    // Facebook
-                    // Expanded(
-                    //   child: ElevatedButton.icon(
-                    //     style: ElevatedButton.styleFrom(
-                    //       backgroundColor: const Color(0xFF1877F2),
-                    //       foregroundColor: Colors.white,
-                    //       padding: const EdgeInsets.symmetric(vertical: 12),
-                    //     ),
-                    //     icon: _isFacebookLoading
-                    //       ? const SizedBox(
-                    //           width: 16,
-                    //           height: 16,
-                    //           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    //         )
-                    //       : const Icon(Icons.facebook),
-                    //     label: Text(_isFacebookLoading ? 'Cargando...' : 'Facebook'),
-                    //     onPressed: _isFacebookLoading ? null : () async {
-                    //       setState(() => _isFacebookLoading = true);
-                    //
-                    //       try {
-                    //         final ds = ref.read(supabaseDataSourceProvider);
-                    //
-                    //         debugPrint('LoginPage -> Starting Facebook sign in');
-                    //
-                    //         // Try to sign in with Facebook
-                    //         final user = await ds.signInWithFacebook();
-                    //
-                    //         debugPrint('LoginPage -> Facebook sign in result: ${user?.id}');
-                    //
-                    //         if (user == null) {
-                    //           if (mounted) {
-                    //             setState(() => _isFacebookLoading = false);
-                    //             ScaffoldMessenger.of(context).showSnackBar(
-                    //               const SnackBar(content: Text('No se pudo iniciar sesión con Facebook')),
-                    //             );
-                    //           }
-                    //           return;
-                    //         }
-                    //
-                    //         // Check if user profile exists in our usuario table
-                    //         final existing = await ds.client
-                    //             .from('usuario')
-                    //             .select('id_usuario')
-                    //             .eq('id_usuario', user.id)
-                    //             .maybeSingle();
-                    //
-                    //         debugPrint('LoginPage -> User exists in table: ${existing != null}');
-                    //
-                    //         if (existing == null && mounted) {
-                    //           // New user - show registration sheet with prefilled data
-                    //           setState(() => _isFacebookLoading = false);
-                    //
-                    //           final authUser = ds.client.auth.currentUser;
-                    //           if (authUser != null) {
-                    //             final fullName = authUser.userMetadata?['full_name'] ??
-                    //                              authUser.userMetadata?['name'] ?? '';
-                    //             final nameParts = fullName.toString().split(' ');
-                    //             final nombre = nameParts.isNotEmpty ? nameParts.first : '';
-                    //             final apellido = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-                    //
-                    //             _showSignUpSheet(
-                    //               context,
-                    //               prefilledNombre: nombre,
-                    //               prefilledApellido: apellido,
-                    //               prefilledEmail: authUser.email ?? '',
-                    //               isOAuthSignup: true,
-                    //             );
-                    //           }
-                    //         } else {
-                    //           // Existing user - update auth state
-                    //           debugPrint('LoginPage -> Updating auth state for existing user');
-                    //           final profile = await ds.client
-                    //               .from('usuario')
-                    //               .select()
-                    //               .eq('id_usuario', user.id)
-                    //               .single();
-                    //           final authUser = ds.client.auth.currentUser;
-                    //
-                    //           if (authUser == null) {
-                    //             throw Exception('Auth user is null');
-                    //           }
-                    //           final userModel = UserModel.fromAuthAndProfile(authUser, profile);
-                    //
-                    //           ref.read(authNotifierProvider.notifier).setUser(userModel);
-                    //           if (mounted) setState(() => _isFacebookLoading = false);
-                    //         }
-                    //       } catch (e) {
-                    //         debugPrint('LoginPage -> Facebook sign in error: $e');
-                    //         if (mounted) {
-                    //           setState(() => _isFacebookLoading = false);
-                    //           ScaffoldMessenger.of(context).showSnackBar(
-                    //             SnackBar(content: Text('Error con Facebook: $e')),
-                    //           );
-                    //         }
-                    //       }
-                    //     },
-                    //   ),
-                    // ),
                   ],
                 ),
+
+                // Botón Apple — solo visible en iOS
+                if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SignInWithAppleButton(
+                      onPressed: _isAppleLoading
+                          ? () {}
+                          : () async {
+                              setState(() => _isAppleLoading = true);
+                              try {
+                                final ds = ref.read(authRepositoryProvider);
+
+                                final result = await ds.signInApple();
+
+                                if (!mounted) return;
+
+                                if (result != null) {
+                                  // Usuario existente con perfil
+                                  ref
+                                      .read(authNotifierProvider.notifier)
+                                      .setUser(result);
+                                  if (mounted) {
+                                    setState(() => _isAppleLoading = false);
+                                  }
+                                  return;
+                                }
+
+                                // Sin perfil aún — reintentar
+                                await Future.delayed(
+                                    const Duration(milliseconds: 500));
+
+                                UserEntity? fullUser;
+                                for (int i = 1; i <= 3; i++) {
+                                  fullUser = await ds.getCurrentUser();
+                                  if (fullUser != null) break;
+                                  await Future.delayed(
+                                      const Duration(milliseconds: 500));
+                                }
+
+                                if (!mounted) return;
+
+                                if (fullUser != null) {
+                                  ref
+                                      .read(authNotifierProvider.notifier)
+                                      .setUser(fullUser);
+                                  if (mounted) {
+                                    setState(() => _isAppleLoading = false);
+                                  }
+                                  return;
+                                }
+
+                                // Usuario nuevo — mostrar sheet de registro
+                                final authInfo = await ds.getAuthUserInfo();
+                                final fullName = authInfo?.displayName ?? '';
+                                final parts = fullName.split(' ');
+
+                                setState(() => _isAppleLoading = false);
+
+                                if (!mounted) return;
+                                await showModalBottomSheet<void>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  isDismissible: false,
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.vertical(
+                                        top: Radius.circular(16)),
+                                  ),
+                                  builder: (ctx) => Padding(
+                                    padding:
+                                        const EdgeInsets.only(top: 8.0),
+                                    child: SignUpSheet(
+                                      prefilledNombre: parts.isNotEmpty
+                                          ? parts.first
+                                          : '',
+                                      prefilledApellido: parts.length > 1
+                                          ? parts.sublist(1).join(' ')
+                                          : '',
+                                      prefilledEmail:
+                                          authInfo?.email ?? '',
+                                      isOAuthSignup: true,
+                                    ),
+                                  ),
+                                );
+                              } on SignInWithAppleAuthorizationException catch (e) {
+                                // El usuario canceló — no mostrar error
+                                if (e.code !=
+                                    AuthorizationErrorCode.canceled) {
+                                  debugPrint('Apple sign in error: $e');
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Error con Apple: ${e.message}')),
+                                    );
+                                  }
+                                }
+                                if (mounted) {
+                                  setState(() => _isAppleLoading = false);
+                                }
+                              } catch (e) {
+                                debugPrint('Apple sign in error: $e');
+                                if (mounted) {
+                                  setState(() => _isAppleLoading = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content:
+                                            Text('Error con Apple: $e')),
+                                  );
+                                }
+                              }
+                            },
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 // Small footer / legal
@@ -613,38 +601,27 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
     }
 
     final nombreUsuario = '$nombre $apellido'.trim();
-    final ds = ref.read(supabaseDataSourceProvider);
+    final ds = ref.read(authRepositoryProvider);
 
     try {
       if (widget.isOAuthSignup) {
-        // Usuario viene de OAuth (Google/Facebook), ya está autenticado
-        // Solo necesitamos crear el registro en la tabla usuario
-        final user = ds.client.auth.currentUser;
-        if (user != null) {
-          // Intentar insertar, si ya existe (constraint) ignorar el error
+        // Usuario viene de OAuth (Google/Facebook), ya está autenticado.
+        // Solo necesitamos crear el registro en la tabla usuario.
+        final isAuth = await ds.isAuthenticated();
+        if (isAuth) {
           try {
-            await ds.client.from('usuario').insert({
-              'id_usuario': user.id,
-              'nombre_usuario': nombreUsuario,
-              'email': email,
-              'es_creador': _esCreador,
-            });
+            await ds.insertUser(nombreUsuario, email, _esCreador);
           } catch (insertErr) {
             debugPrint('SignUpSheet -> insert error (may already exist): $insertErr');
           }
 
-          // Cargar perfil actualizado
-          final profile = await ds.client
-              .from('usuario')
-              .select()
-              .eq('id_usuario', user.id)
-              .single();
-
-          final userModel = UserModel.fromAuthAndProfile(user, profile);
-          ref.read(authNotifierProvider.notifier).setUser(userModel);
+          // getCurrentUser ya carga auth + perfil en un solo paso
+          final userModel = await ds.getCurrentUser();
+          if (userModel != null) {
+            ref.read(authNotifierProvider.notifier).setUser(userModel);
+          }
 
           if (mounted) {
-            // Cerrar el sheet y navegar al Home limpiando todo el stack
             Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => const HomePage()),
               (route) => false,
@@ -662,10 +639,7 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
 
         if (user != null) {
           try {
-            await ds.client.from('usuario').update({
-              'telefono': telefono.isNotEmpty ? telefono : null,
-              'codigo_inv': codigoInv.isNotEmpty ? codigoInv : null,
-            }).eq('id_usuario', user.id);
+            ds.updateUser(telefono, codigoInv);
           } catch (_) {}
 
           // Auto-login so user enters the app immediately

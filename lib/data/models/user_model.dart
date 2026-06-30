@@ -22,12 +22,12 @@ class UserModel extends UserEntity {
     );
   }
 
-  factory UserModel.fromAuthAndProfile(User user, Map<String, dynamic>? profile) {
-    final meta = user.userMetadata ?? {};
+  factory UserModel.fromAuthAndProfile(User? user, Map<String, dynamic>? profile) {
+    final meta = user?.userMetadata ?? {};
 
     return UserModel(
-      id: user.id,
-      email: user.email,
+      id: user!.id,
+      email: user!.email,
       username: profile?['nombre_usuario'] as String?,
       esCreador: profile?['es_creador'] as bool? ?? false,
       avatarUrl: meta['avatar_url'] as String?,

@@ -127,12 +127,12 @@ class SupabaseDataSource {
 
   /// Inicia sesión con Google OAuth
   /// No crea automáticamente el usuario en la tabla, solo autentica
-  Future<User?> signInWithGoogle() async {
-    return _signInWithOAuthProvider(
-      OAuthProvider.google,
-      'signInWithGoogle',
-    );
-  }
+  // Future<User?> signInWithGoogle() async {
+  //   return _signInWithOAuthProvider(
+  //     OAuthProvider.google,
+  //     'signInWithGoogle',
+  //   );
+  // }
 
   /// Inicia sesión con Facebook OAuth
   /// No crea automáticamente el usuario en la tabla, solo autentica

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
 import 'package:sincboflutter/feature/chat/presentation/pages/chat.page.dart';
 import 'package:sincboflutter/feature/fellow/presentation/pages/fellow_creator.page.dart';
 import 'package:sincboflutter/feature/fellow/presentation/pages/fellow.page.dart';
@@ -8,11 +7,9 @@ import 'package:sincboflutter/feature/earnings/presentation/pages/earnings.page.
 import 'package:sincboflutter/feature/subscription/presentation/pages/subscription.page.dart';
 
 import '../../../../core/providers/auth_notifier_provider.dart';
-import '../../../../core/providers/creator_repository_provider.dart';
-import '../../../../domain/entities/creator.dart';
 import '../../../../core/providers/providers.dart';
-import '../../../auth/presentation/pages/login.page.dart';
 import '../../../community/presentation/pages/comunidad_page.dart';
+import '../controllers/creator_community_chat_provider.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -23,211 +20,95 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   int _currentIndex = 0;
-  int _fellowsCount = 0;
-  int _solicitudesCount = 0;
 
-  void _onTap(int index) {
-    setState(() => _currentIndex = index);
-  }
-
-  Future<void> _loadCounts() async {
-    try {
-      final ds = ref.read(supabaseDataSourceProvider);
-      // Fellows count: personas que compraron el plan Fellow del creador actual
-      final fellows = await ds.obtenerUsuarioPorTipo('Fellow', limit: 200, offset: 0);
-      // Solicitudes count placeholder
-      final solicitudes = <dynamic>[];
-      setState(() {
-        _fellowsCount = fellows.length;
-        _solicitudesCount = solicitudes.length;
-      });
-    } catch (_) {
-      // keep current counts
-    }
-  }
+  void _onTap(int index) => setState(() => _currentIndex = index);
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authNotifierProvider);
+    final user = ref.watch(authNotifierProvider).valueOrNull;
+    if (user == null) return const SizedBox.shrink();
 
-    return authState.when(
-      data: (user) {
-        if (user == null) {
-          return const SizedBox.shrink();
+    final isCreator = user.esCreador;
+
+    final List<Widget> pages;
+    final List<BottomNavigationBarItem> items;
+
+    if (isCreator) {
+      pages = const [
+        _CreatorComunidadView(),
+        FellowCreatorPage(),
+        SuscritosPage(),
+        GananciasPage(),
+      ];
+      items = const [
+        BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
+        BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Fellows'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.mail_outline), label: 'Solicitudes'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.attach_money), label: 'Ganancias'),
+      ];
+    } else {
+      pages = const [
+        ComunidadPage(),
+        FellowPage(),
+        SuscritosPage(),
+      ];
+      items = const [
+        BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
+        BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Fellows'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.post_add), label: 'Suscritos'),
+      ];
+    }
+
+    // Clamp index si el rol cambió y la tab ya no existe
+    final safeIndex = _currentIndex.clamp(0, pages.length - 1);
+
+    return Scaffold(
+      body: pages[safeIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: safeIndex,
+        onTap: _onTap,
+        type: BottomNavigationBarType.fixed,
+        items: items,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vista de comunidad del creador: delega toda la lógica al provider
+// ---------------------------------------------------------------------------
+class _CreatorComunidadView extends ConsumerWidget {
+  const _CreatorComunidadView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chatAsync = ref.watch(creatorCommunityChatProvider);
+
+    return chatAsync.when(
+      data: (result) {
+        if (result == null) {
+          return const Center(child: Text('No se pudo cargar el chat de comunidad'));
         }
-        final creatorsAsync = ref.watch(creatorsProvider);
-
-        return creatorsAsync.when(
-          data: (creators) {
-            final isCreator = user.esCreador || false;
-
-            // Defer counts load until after first build to avoid build-time async
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _loadCounts();
-            });
-
-            // Build pages and items depending on isCreator
-            List<Widget> pages;
-            List<BottomNavigationBarItem> items;
-
-            if (isCreator) {
-              // Order: Comunidad, Fellows(N), Solicitudes(N), Ganancias
-              pages = <Widget>[
-                _ComunidadChatLauncher(userId: user.id),
-                const FellowCreatorPage(),
-                const SuscritosPage(), // placeholder for Solicitudes page
-                const GananciasPage(), // placeholder for Ganancias page
-              ];
-
-              items = <BottomNavigationBarItem>[
-                const BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
-                BottomNavigationBarItem(icon: const Icon(Icons.people), label: 'Fellows (${_fellowsCount})'),
-                BottomNavigationBarItem(icon: const Icon(Icons.mail_outline), label: 'Solicitudes (${_solicitudesCount})'),
-                const BottomNavigationBarItem(icon: Icon(Icons.attach_money), label: 'Ganancias'),
-              ];
-            } else {
-              // Non-creator: Comunidad, Fellows, Suscritos
-              pages = const <Widget>[
-                ComunidadPage(),
-                FellowPage(),
-                SuscritosPage(),
-              ];
-
-              items = const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Comunidad'),
-                BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Fellows'),
-                BottomNavigationBarItem(icon: Icon(Icons.post_add), label: 'Suscritos'),
-              ];
-            }
-
-            // Clamp current index if menu size changed
-            if (_currentIndex >= pages.length) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) setState(() => _currentIndex = 0);
-              });
-            }
-
-            return Scaffold(
-              body: pages[_currentIndex],
-              bottomNavigationBar: BottomNavigationBar(
-                currentIndex: _currentIndex,
-                onTap: _onTap,
-                type: BottomNavigationBarType.fixed,
-                items: items,
-              ),
-            );
-          },
-          loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-          error: (e, st) => Scaffold(body: Center(child: Text('Error: ${e.toString()}'))),
-        );
+        return ChatPage(creator: result.creator, chatId: result.chatId);
       },
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, st) => Scaffold(body: Center(child: Text('Error: ${e.toString()}'))),
-    );
-  }
-}
-
-class _ComunidadChatLauncher extends ConsumerStatefulWidget {
-  final String userId;
-  const _ComunidadChatLauncher({Key? key, required this.userId}) : super(key: key);
-
-  @override
-  ConsumerState<_ComunidadChatLauncher> createState() => _ComunidadChatLauncherState();
-}
-
-class _ComunidadChatLauncherState extends ConsumerState<_ComunidadChatLauncher> {
-  String? _chatId;
-  CreatorEntity? _creator;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
-  }
-
-  Future<void> _openChat() async {
-    final authUser = ref.read(authNotifierProvider).maybeWhen(
-      data: (u) => u,
-      orElse: () => null,
-    );
-
-    // 🔥 SI NO HAY USUARIO → NO HACER NADA
-    if (authUser == null) return;
-    setState(() => _error = null);
-    try {
-      // Fetch creators and try to find current user as creator entity
-      final repo = ref.read(creatorRepositoryProvider);
-      final creators = await repo.getCreators();
-      
-      final repoChat = ref.read(chatRepositoryProvider);
-
-      CreatorEntity? me;
-
-      for (final creator in creators) {
-        if (creator.idUsuario == widget.userId) {
-          me = creator;
-          break;
-        }
-      }
-
-      me ??= creators.isNotEmpty ? creators.first : null;
-
-      if (me == null) {
-        // Fallback: build a minimal CreatorEntity from auth profile
-        final authUser = ref.read(authNotifierProvider).maybeWhen(data: (u) => u, orElse: () => null);
-        if (authUser == null) {
-          setState(() => _error = 'No hay usuario autenticado');
-          return;
-        }
-        me = CreatorEntity(
-          idUsuario: authUser.id,
-          nombreUsuario: authUser.email?.split('@').first ?? 'Creador',
-          email: authUser.email ?? '',
-          bio: 'Perfil de creador',
-          precioSuscripcion: 0.0,
-          precioSuscripcionFellow: 0.0,
-          categoria: 'Comunidad',
-          publicaciones: const [],
-          planes: const [],
-        );
-      }
-
-      _creator = me;
-
-      String? chatId;
-
-      // Si el creador tiene planes, usar el flujo normal con el primer plan
-      if (me.planes != null && me.planes!.isNotEmpty) {
-        final planId = me.planes!.first['id_plan'] as String;
-        chatId = await repoChat.createChatAndParticipants(me.idUsuario, planId, false);
-      } else {
-        // Sin planes: buscar o crear el chat de comunidad directamente
-        chatId = await repoChat.getOrCreateComunidadChat(me.idUsuario);
-      }
-
-      if (!mounted) return;
-      setState(() => _chatId = chatId ?? '');
-    } catch (e) {
-      setState(() => _error = e.toString());
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_error != null) {
-      return Center(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(_error!, textAlign: TextAlign.center),
+            Text(e.toString(), textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: () => _openChat(), child: const Text('Reintentar')),
+            ElevatedButton(
+              onPressed: () =>
+                  ref.invalidate(creatorCommunityChatProvider),
+              child: const Text('Reintentar'),
+            ),
           ],
         ),
-      );
-    }
-    if (_chatId == null || _creator == null) return const Center(child: CircularProgressIndicator());
-    return ChatPage(creator: _creator!, chatId: _chatId!);
+      ),
+    );
   }
 }

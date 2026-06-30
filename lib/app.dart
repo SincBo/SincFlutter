@@ -1,36 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/services/auth_listener.service.dart';
+import 'core/providers/auth_notifier_provider.dart';
 import 'core/theme/app_theme.dart';
-import 'feature/auth/AuthGate.dart';
+import 'feature/auth/auth_gate.dart';
+import 'feature/auth/presentation/pages/reset_password.page.dart';
 
-class MyApp extends StatefulWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  ConsumerState<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends ConsumerState<MyApp> {
   final navigatorKey = GlobalKey<NavigatorState>();
-
-  late final AuthListenerService _authListener;
 
   @override
   void initState() {
     super.initState();
 
-    _authListener = AuthListenerService(
-      navigatorKey: navigatorKey,
-    );
-
-    _authListener.start();
-  }
-
-  @override
-  void dispose() {
-    _authListener.dispose();
-    super.dispose();
+    // Escuchamos el provider de recovery que AuthNotifier activa
+    // cuando Supabase emite el evento passwordRecovery.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listen<bool>(passwordRecoveryProvider, (previous, isRecovery) {
+        if (isRecovery) {
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const ResetPasswordPage()),
+            (_) => false,
+          );
+        }
+      });
+    });
   }
 
   @override

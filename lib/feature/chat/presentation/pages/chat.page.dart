@@ -220,7 +220,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       appBar: AppBar(
         title: Text(widget.creator.nombreUsuario),
       ),
-      body: Column(
+      body: Padding(padding: EdgeInsets.all(8.0), child: Column(
         children: [
           Expanded(
             child: widget.chatId == null
@@ -324,7 +324,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
             ),
         ],
-      ),
+      ),)
     );
   }
 }

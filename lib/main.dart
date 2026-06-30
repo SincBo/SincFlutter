@@ -8,13 +8,17 @@ import 'app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {}
+  await dotenv.load(fileName: '.env');
+
+  final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+  final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+
+  assert(supabaseUrl.isNotEmpty, 'SUPABASE_URL no está definida en .env');
+  assert(supabaseKey.isNotEmpty, 'SUPABASE_ANON_KEY no está definida en .env');
 
   await Supabase.initialize(
-    url: 'https://hsbgqbyumyvcxczwuvqv.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYmdxYnl1bXl2Y3hjend1dnF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkwODE2OTcsImV4cCI6MjA2NDY1NzY5N30.aZJVU1x76CTI7wYhYBZ5WDYH_PAUibE_iG2zxZQTzK8',
+    url: supabaseUrl,
+    anonKey: supabaseKey,
   );
 
   runApp(

@@ -1,4 +1,4 @@
-import '../../data/datasources/paymente.datasource.dart';
+import '../../data/datasources/payment.datasource.dart';
 
 class PaymentRepository {
   final PaymentDataSource paymentDs;

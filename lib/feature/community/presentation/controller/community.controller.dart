@@ -19,17 +19,24 @@ class CommunityController extends StateNotifier<CommunityState> {
       creators: [],
       hasMore: true,
       query: query,
+      clearError: true,
     );
 
-    final results = await repo.searchCreators(query, limit: pageSize, offset: 0);
-
-    state = state.copyWith(
-      creators: results,
-      loading: false,
-      hasMore: results.length == pageSize,
-    );
-
-    _page = 1;
+    try {
+      final results = await repo.searchCreators(query, limit: pageSize, offset: 0);
+      state = state.copyWith(
+        creators: results,
+        loading: false,
+        hasMore: results.length == pageSize,
+        clearError: true,
+      );
+      _page = 1;
+    } catch (e) {
+      state = state.copyWith(
+        loading: false,
+        error: e.toString(),
+      );
+    }
   }
 
   Future<void> loadMore() async {
@@ -37,18 +44,23 @@ class CommunityController extends StateNotifier<CommunityState> {
 
     state = state.copyWith(loadingMore: true);
 
-    final results = await repo.searchCreators(
-      state.query,
-      limit: pageSize,
-      offset: _page * pageSize,
-    );
-
-    state = state.copyWith(
-      creators: [...state.creators, ...results],
-      loadingMore: false,
-      hasMore: results.length == pageSize,
-    );
-
-    _page++;
+    try {
+      final results = await repo.searchCreators(
+        state.query,
+        limit: pageSize,
+        offset: _page * pageSize,
+      );
+      state = state.copyWith(
+        creators: [...state.creators, ...results],
+        loadingMore: false,
+        hasMore: results.length == pageSize,
+      );
+      _page++;
+    } catch (e) {
+      state = state.copyWith(
+        loadingMore: false,
+        error: e.toString(),
+      );
+    }
   }
 }

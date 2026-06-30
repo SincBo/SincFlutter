@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
 import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
-import 'dart:convert';
 
 import '../../../../core/providers/auth_notifier_provider.dart';
-import '../../../../core/providers/creator_repository_provider.dart';
 import '../../../../core/providers/providers.dart';
 import '../../../../core/widgets/search_bar.dart';
 import '../../../../domain/entities/creator.dart';
 import '../../../chat/presentation/pages/chat.page.dart';
 import '../../../creator_profile/presentation/pages/creator_profile.page.dart';
 import '../../../profile/presentation/pages/profile.page.dart';
+import '../controller/community.provider.dart';
+import '../controller/community.state.dart';
 
 class ComunidadPage extends ConsumerStatefulWidget {
   const ComunidadPage({Key? key}) : super(key: key);
@@ -21,30 +21,15 @@ class ComunidadPage extends ConsumerStatefulWidget {
 }
 
 class _ComunidadPageState extends ConsumerState<ComunidadPage> {
-  String _searchQuery = '';
-
-  // Pagination state
-  final List<CreatorEntity> _creators = [];
   final ScrollController _scrollController = ScrollController();
-  bool _isLoading = false; // initial load or refresh
-  bool _isLoadingMore = false;
-  bool _hasMore = true;
-  int _page = 0;
-  final int _pageSize = 20;
-  String? _error;
-
-  void _onSearchChanged(String value) {
-    // when DebouncedSearchBar calls this, perform a fresh search
-    _searchQuery = value;
-    _refreshSearch();
-  }
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // initial load
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshSearch());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(communityControllerProvider.notifier).refresh('');
+    });
   }
 
   @override
@@ -55,119 +40,41 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
   }
 
   void _onScroll() {
-    if (!_hasMore || _isLoadingMore || _isLoading) return;
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      _fetchNextPage();
+    final s = ref.read(communityControllerProvider);
+    if (s.loading || s.loadingMore || !s.hasMore) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      ref.read(communityControllerProvider.notifier).loadMore();
     }
   }
 
-  Future<void> _refreshSearch() async {
-    _page = 0;
-    _hasMore = true;
-    _error = null;
-    setState(() {
-      _isLoading = true;
-      _creators.clear();
-    });
-    await _fetchPage();
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _fetchNextPage() async {
-    if (!_hasMore) return;
-    setState(() {
-      _isLoadingMore = true;
-    });
-    await _fetchPage();
-    if (!mounted) return;
-    setState(() {
-      _isLoadingMore = false;
-    });
-  }
-
-  Future<void> _fetchPage() async {
-    try {
-      final repo = ref.read(creatorRepositoryProvider);
-      final offset = _page * _pageSize;
-      final results = await repo.searchCreators(_searchQuery, limit: _pageSize, offset: offset);
-      debugPrint('ComunidadPage._fetchPage -> fetched ${results.length} items for query "$_searchQuery" offset $offset');
-      if (results.isNotEmpty) {
-        try {
-          final sample = results.take(3).map((r) => r.toMap()).toList();
-          debugPrint('ComunidadPage._fetchPage sample items: ${const JsonEncoder.withIndent('  ').convert(sample)}');
-        } catch (_) {
-          debugPrint('ComunidadPage._fetchPage -> unable to serialize sample items');
-        }
-      }
-      if (results.isEmpty) {
-        // Try a direct datasource RPC fallback (in case RLS or table selection returns empty)
-        try {
-          final ds = ref.read(creatorRepositoryProvider);
-          final rpcModels = await ds.getCreators();
-          final rpcEntities = rpcModels.cast<CreatorEntity>();
-          if (rpcEntities.isNotEmpty) {
-            debugPrint('ComunidadPage._fetchPage -> populated from RPC fallback with ${rpcEntities.length} items');
-            setState(() {
-              _creators.addAll(rpcEntities.take(_pageSize));
-              if (rpcEntities.length < _pageSize) {
-                _hasMore = false;
-              } else {
-                _page = 1; // we've loaded first page from RPC
-              }
-              _error = null;
-            });
-            return;
-          }
-        } catch (e) {
-          debugPrint('ComunidadPage._fetchPage -> RPC fallback error: $e');
-        }
-        setState(() {
-          _hasMore = false;
-          _error = null;
-        });
-        return;
-      }
-      if (!mounted) return;
-      setState(() {
-        _creators.addAll(results);
-        if (results.length < _pageSize) {
-          _hasMore = false;
-        } else {
-          _page += 1;
-        }
-        _error = null;
-      });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-    }
+  void _onSearchChanged(String value) {
+    ref.read(communityControllerProvider.notifier).refresh(value);
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(communityControllerProvider);
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section 1: Header with title and profile avatar + label
+            // Header
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Comunidad', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Comunidad',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'logout') {
-                      // Sign out via the auth notifier
                       ref.read(authNotifierProvider.notifier).signOut();
                     } else if (value == 'perfil') {
-                      // Navigate to ProfilePage
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const ProfilePage()),
                       );
@@ -175,14 +82,19 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
                   },
                   itemBuilder: (context) => [
                     const PopupMenuItem(value: 'perfil', child: Text('Perfil')),
-                    const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
+                    const PopupMenuItem(
+                        value: 'logout', child: Text('Cerrar sesión')),
                   ],
                   child: Column(
                     children: [
                       CircleAvatar(
                         radius: 24,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                        child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.1),
+                        child: Icon(Icons.person,
+                            color: Theme.of(context).colorScheme.primary),
                       ),
                       const SizedBox(height: 6),
                       const Text('Perfil', style: TextStyle(fontSize: 12)),
@@ -194,152 +106,166 @@ class _ComunidadPageState extends ConsumerState<ComunidadPage> {
 
             const SizedBox(height: 16),
 
-            // Section 2: Reusable SearchBar widget
             DebouncedSearchBar(
               hintText: 'Buscar en la comunidad',
-              initialText: _searchQuery,
+              initialText: s.query,
               debounceDuration: const Duration(milliseconds: 300),
               onChanged: _onSearchChanged,
             ),
 
             const SizedBox(height: 16),
 
-            // Section 3: Paginated list of creators fetched server-side
             Expanded(
-              child: Builder(builder: (context) {
-                if (_isLoading && _creators.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (_error != null && _creators.isEmpty) {
-                  return Center(child: Text('Error cargando creadores: $_error'));
-                }
-                if (_creators.isEmpty) {
-                  return const Center(child: Text('No hay creadores que coincidan con la búsqueda'));
-                }
-
-                return RefreshIndicator(
-                  onRefresh: _refreshSearch,
-                  child: ListView.separated(
-                    controller: _scrollController,
-                    itemCount: _creators.length + (_isLoadingMore ? 1 : 0),
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index >= _creators.length) {
-                        // loading more indicator
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final c = _creators[index];
-                      final initials = c.nombreUsuario.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join().toUpperCase();
-                      return ListTile(
-                        leading: CircleAvatar(child: Text(initials.isNotEmpty ? initials : '?')),
-                        title: Text(c.nombreUsuario),
-                        subtitle: Text(c.categoria ?? ''),
-                        onTap: () async {
-                          // Si el creador no tiene planes configurados, mostrar aviso
-                          final tienePlanes = c.planes != null && c.planes!.isNotEmpty;
-                          if (!tienePlanes) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Row(
-                                  children: const [
-                                    Icon(Icons.construction, color: Colors.white),
-                                    SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        'Este creador aún está construyendo su perfil. ¡Vuelve pronto!',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                            return;
-                          }
-
-                          // Mostrar loading mientras verificamos suscripción
-                          showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const Center(child: CircularProgressIndicator()),
-                          );
-
-                          bool isSubscribed = false;
-                          try {
-                            isSubscribed = await ref.read(isSubscribedProvider(c.idUsuario).future,
-                            );
-                          } catch (_) {}
-
-                          if (!mounted) return;
-
-                          if (isSubscribed) {
-                            // Verificar si el plan suscrito es Comunidad (planes[0])
-                            final comunidadPlanId = c.planes![0]['id_plan'] as String?;
-
-                            bool esComunidad = false;
-                            if (comunidadPlanId != null) {
-                              try {
-                                final repo = ref.read(paymentRepositoryProvider);
-                                esComunidad = await repo.isSubscribedToPlan(comunidadPlanId);
-                              } catch (_) {}
-                            }
-
-                            if (!mounted) return;
-
-                            if (esComunidad) {
-                              // Suscrito a Comunidad → ir directo al chat
-                              String? chatId;
-                              try {
-                                final repo = ref.read(chatRepositoryProvider);
-                                if (comunidadPlanId != null) {
-                                  chatId = await repo.createChatAndParticipants(
-                                      c.idUsuario, comunidadPlanId, false);
-                                } else {
-                                  chatId = await repo.getOrCreateComunidadChat(c.idUsuario);
-                                }
-                              } catch (_) {}
-
-                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-                              if (!mounted) return;
-
-                              if (chatId != null) {
-                                Navigator.of(context).push(MaterialPageRoute(
-                                  builder: (_) => ChatPage(creator: c, chatId: chatId),
-                                ));
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('No se pudo abrir el chat')),
-                                );
-                              }
-                            } else {
-                              // Suscrito pero NO a Comunidad (e.g., Fellow) → mostrar perfil
-                              if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-                              if (!mounted) return;
-                              Navigator.of(context).push(MaterialPageRoute(
-                                builder: (context) => CreatorWallPage(creator: c),
-                              ));
-                            }
-                          } else {
-                            // No suscrito → abrir perfil del creador
-                            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-                            if (!mounted) return;
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (context) => CreatorWallPage(creator: c),
-                            ));
-                          }
-                        },
-                      );
-                    },
-                  ),
-                );
-              }),
+              child: _CreatorList(
+                state: s,
+                scrollController: _scrollController,
+                onRefresh: () =>
+                    ref.read(communityControllerProvider.notifier).refresh(s.query),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lista extraída en widget separado para claridad
+// ---------------------------------------------------------------------------
+class _CreatorList extends ConsumerWidget {
+  final CommunityState state;
+  final ScrollController scrollController;
+  final Future<void> Function() onRefresh;
+
+  const _CreatorList({
+    required this.state,
+    required this.scrollController,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (state.loading && state.creators.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (state.error != null && state.creators.isEmpty) {
+      return Center(child: Text('Error: ${state.error}'));
+    }
+    if (state.creators.isEmpty) {
+      return const Center(
+          child: Text('No hay creadores que coincidan con la búsqueda'));
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.separated(
+        controller: scrollController,
+        itemCount: state.creators.length + (state.loadingMore ? 1 : 0),
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          if (index >= state.creators.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          final c = state.creators[index];
+          final initials = c.nombreUsuario
+              .trim()
+              .split(' ')
+              .map((s) => s.isNotEmpty ? s[0] : '')
+              .take(2)
+              .join()
+              .toUpperCase();
+
+          return ListTile(
+            leading:
+                CircleAvatar(child: Text(initials.isNotEmpty ? initials : '?')),
+            title: Text(c.nombreUsuario),
+            subtitle: Text(c.categoria ?? ''),
+            onTap: () => _onCreatorTap(context, ref, c),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _onCreatorTap(
+      BuildContext context, WidgetRef ref, CreatorEntity creator) async {
+    final tienePlanes =
+        creator.planes != null && creator.planes!.isNotEmpty;
+
+    if (!tienePlanes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Este creador aún está construyendo su perfil. ¡Vuelve pronto!'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Mostrar loading mientras verificamos suscripción
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    bool isSubscribed = false;
+    try {
+      isSubscribed =
+          await ref.read(isSubscribedProvider(creator.idUsuario).future);
+    } catch (_) {}
+
+    if (!context.mounted) return;
+
+    final comunidadPlanId =
+        creator.planes?[0]['id_plan'] as String?;
+
+    if (isSubscribed && comunidadPlanId != null) {
+      bool esComunidad = false;
+      try {
+        esComunidad = await ref
+            .read(paymentRepositoryProvider)
+            .isSubscribedToPlan(comunidadPlanId);
+      } catch (_) {}
+
+      if (!context.mounted) return;
+
+      if (esComunidad) {
+        String? chatId;
+        try {
+          chatId = await ref
+              .read(chatRepositoryProvider)
+              .createChatAndParticipants(
+                  creator.idUsuario, comunidadPlanId, false);
+        } catch (_) {}
+
+        if (context.mounted) Navigator.of(context).pop();
+        if (!context.mounted) return;
+
+        if (chatId != null) {
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ChatPage(creator: creator, chatId: chatId),
+          ));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo abrir el chat')),
+          );
+        }
+        return;
+      }
+    }
+
+    // No suscrito o suscrito a otro plan → mostrar perfil
+    if (context.mounted) Navigator.of(context).pop();
+    if (!context.mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CreatorWallPage(creator: creator),
+    ));
   }
 }

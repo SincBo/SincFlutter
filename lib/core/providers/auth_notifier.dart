@@ -4,20 +4,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
+import 'auth_notifier_provider.dart';
 
 class AuthNotifier extends StateNotifier<AsyncValue<UserEntity?>> {
   final AuthRepository repository;
+  final Ref _ref;
 
   StreamSubscription? _sub;
 
-  AuthNotifier(this.repository) : super(const AsyncValue.loading()) {
+  AuthNotifier(this.repository, this._ref) : super(const AsyncValue.loading()) {
     _init();
   }
 
   void _init() {
     _sub = Supabase.instance.client.auth.onAuthStateChange.listen(
-          (data) async {
+      (data) async {
         final event = data.event;
+
+        if (event == AuthChangeEvent.passwordRecovery) {
+          _ref.read(passwordRecoveryProvider.notifier).state = true;
+          return;
+        }
+
+        // Resetear el flag si el usuario completa o cancela el recovery
+        _ref.read(passwordRecoveryProvider.notifier).state = false;
 
         if (event == AuthChangeEvent.signedOut || data.session == null) {
           state = const AsyncValue.data(null);
