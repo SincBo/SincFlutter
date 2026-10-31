@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
+import 'package:sincboflutter/data/utils/error_message.dart';
 import '../../../../core/providers/auth_notifier_provider.dart';
 import '../../../../core/widgets/search_bar.dart';
 import '../../../../core/providers/providers.dart';
@@ -8,6 +9,7 @@ import '../../../../data/models/creator_por_tipo_model.dart';
 import '../../../../domain/entities/creator.dart';
 import '../../../chat/presentation/pages/chat.page.dart';
 import '../../../profile/presentation/pages/profile.page.dart';
+import '../../../creator_profile/presentation/pages/creator_profile.page.dart';
 
 class SuscritosPage extends ConsumerStatefulWidget {
   const SuscritosPage({Key? key}) : super(key: key);
@@ -175,20 +177,21 @@ class _SuscritosPageState extends ConsumerState<SuscritosPage> {
                               // Crear u obtener chat id y navegar a ChatPage
                               showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                               String? chatId;
+                              String? errorMessage;
                               try {
                                 final repo = ref.read(chatRepositoryProvider);
                                 chatId = await repo.createChatAndParticipants(c.idCreador, c.idPlan, false);
                               } catch (e) {
+                                debugPrint('subscription_page -> createChatAndParticipants error: $e');
+                                errorMessage = friendlyErrorMessage(e);
                                 chatId = null;
                               }
                               if (Navigator.of(context).canPop()) Navigator.of(context).pop();
                               if (!mounted) return;
-                              if (chatId == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir el chat')));
-                                return;
-                              }
 
-                              // Map CreatorPorTipoModel to CreatorEntity minimally
+                              // Map CreatorPorTipoModel to CreatorEntity minimally,
+                              // incluyendo el plan que ya conocemos (para poder
+                              // mostrarlo si hay que mandar a suscribirse de nuevo).
                               final creator = CreatorEntity(
                                 idUsuario: c.idCreador,
                                 nombreUsuario: c.nombreCreador,
@@ -198,8 +201,29 @@ class _SuscritosPageState extends ConsumerState<SuscritosPage> {
                                 precioSuscripcionFellow: c.precioPlan,
                                 categoria: c.tipoPlan,
                                 publicaciones: const [],
-                                planes: const [],
+                                planes: [
+                                  {
+                                    'id_plan': c.idPlan,
+                                    'nombre': c.tipoPlan,
+                                    'descripcion': '',
+                                    'precio': c.precioPlan,
+                                  }
+                                ],
                               );
+
+                              if (chatId == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(errorMessage ?? 'No se pudo abrir el chat')),
+                                );
+                                // Sin suscripción activa (o primera vez): llevar
+                                // al perfil del creador para que vea sus planes.
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CreatorWallPage(creator: creator),
+                                  ),
+                                );
+                                return;
+                              }
 
                               Navigator.of(context).push(
                                 MaterialPageRoute(

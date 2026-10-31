@@ -11,34 +11,18 @@ class PaymentRepository {
   Future<String?> createTransaction({
     required String creatorId,
     required String planId,
-    required double price,
   }) {
     return paymentDs.createTransaction(
       creatorId: creatorId,
       planId: planId,
-      price: price,
     );
   }
 
   // =========================
   // GENERAR QR DE PAGO
   // =========================
-  Future<dynamic> generateQr({
-    required double amount,
-    required String gloss,
-    required String destinationAccountId,
-    String? additionalData,
-    String? callbackUrl,
-    String? transactionIdentifier,
-  }) {
-    return paymentDs.generateQr(
-      amount: amount,
-      gloss: gloss,
-      destinationAccountId: destinationAccountId,
-      additionalData: additionalData,
-      callbackUrl: callbackUrl,
-      transactionIdentifier: transactionIdentifier,
-    );
+  Future<dynamic> generateQr({required String transactionId}) {
+    return paymentDs.generateQr(transactionId: transactionId);
   }
 
   // =========================

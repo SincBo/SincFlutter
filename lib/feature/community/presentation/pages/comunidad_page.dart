@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
 import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
+import 'package:sincboflutter/data/utils/error_message.dart';
 
 import '../../../../core/providers/auth_notifier_provider.dart';
 import '../../../../core/providers/providers.dart';
@@ -226,6 +227,10 @@ class _CreatorList extends ConsumerWidget {
     final comunidadPlanId =
         creator.planes?[0]['id_plan'] as String?;
 
+    debugPrint('comunidad_page -> creator=${creator.idUsuario} '
+        'planes=${creator.planes} comunidadPlanId=$comunidadPlanId '
+        'isSubscribed=$isSubscribed');
+
     if (isSubscribed && comunidadPlanId != null) {
       bool esComunidad = false;
       try {
@@ -234,16 +239,22 @@ class _CreatorList extends ConsumerWidget {
             .isSubscribedToPlan(comunidadPlanId);
       } catch (_) {}
 
+      debugPrint('comunidad_page -> esComunidad=$esComunidad');
+
       if (!context.mounted) return;
 
       if (esComunidad) {
         String? chatId;
+        String? errorMessage;
         try {
           chatId = await ref
               .read(chatRepositoryProvider)
               .createChatAndParticipants(
                   creator.idUsuario, comunidadPlanId, false);
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('comunidad_page -> createChatAndParticipants error: $e');
+          errorMessage = friendlyErrorMessage(e);
+        }
 
         if (context.mounted) Navigator.of(context).pop();
         if (!context.mounted) return;
@@ -254,7 +265,7 @@ class _CreatorList extends ConsumerWidget {
           ));
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se pudo abrir el chat')),
+            SnackBar(content: Text(errorMessage ?? 'No se pudo abrir el chat')),
           );
         }
         return;

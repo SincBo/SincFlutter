@@ -19,7 +19,6 @@ class AnalyticsDataSource {
       final res = await client.rpc(
         'get_ganancias_creador_mes_v1',
         params: {
-          'p_id_creador': creadorId,
           'p_year': year,
           'p_month': month,
         },
@@ -73,7 +72,6 @@ class AnalyticsDataSource {
       final res = await client.rpc(
         'get_ganancias_creador_mes_v1',
         params: {
-          'p_id_creador': creadorId,
           'p_year': year,
           'p_month': month,
         },
@@ -107,7 +105,6 @@ class AnalyticsDataSource {
       final res = await client.rpc(
         'get_top_pagos_creador_mes_v1',
         params: {
-          'p_id_creador': creadorId,
           'p_year': year,
           'p_month': month,
           'p_limit': limit,

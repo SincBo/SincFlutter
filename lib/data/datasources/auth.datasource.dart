@@ -1,16 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 
 import '../models/user_model.dart';
 
+// Client IDs de Google Cloud Console (proyecto usado por el proveedor de
+// Google en Supabase). El web client ID es el mismo que ya está configurado
+// en Supabase Dashboard -> Authentication -> Providers -> Google.
+const String _googleWebClientId =
+    '215940025127-e9etpknh5rfe8p7jd03ifom9mak2t76u.apps.googleusercontent.com';
+const String _googleIosClientId =
+    '215940025127-e6btmotii3mu2hnoi4rvap35fvoqd9kv.apps.googleusercontent.com';
+
 class AuthDataSource {
   final SupabaseClient client;
+  bool _googleSignInInitialized = false;
 
   AuthDataSource(this.client);
 
@@ -99,6 +111,28 @@ class AuthDataSource {
     await client.auth.signOut();
   }
 
+  /// Borra la cuenta del usuario actual de forma permanente.
+  /// Requiere la Edge Function `delete-account` (service role), ya que el
+  /// cliente no tiene permisos para borrar de auth.users directamente.
+  /// Exigido por Apple Guideline 5.1.1(v): las apps con registro de cuenta
+  /// deben ofrecer borrado de cuenta real (no solo desactivación).
+  Future<void> deleteAccount() async {
+    try {
+      final res = await client.functions.invoke('delete-account');
+      if (res.status != 200) {
+        final data = res.data;
+        final serverMessage = (data is Map && data['error'] != null)
+            ? data['error'].toString()
+            : 'status ${res.status}';
+        throw Exception(serverMessage);
+      }
+      await client.auth.signOut();
+    } catch (e) {
+      debugPrint('deleteAccount -> error: $e');
+      rethrow;
+    }
+  }
+
   Future<void> changePassword({
     required String newPassword,
   }) async {
@@ -180,10 +214,65 @@ class AuthDataSource {
   }
 
   Future<User?> signInWithGoogle() async {
+    // En iOS usamos el selector nativo de Google (sin navegador). El flujo
+    // basado en navegador (signInWithOAuth + SFSafariViewController) falla
+    // de forma recurrente en iOS con PlatformException("Error while
+    // launching...") tanto en Simulador como en dispositivo real; Supabase
+    // mismo recomienda el flujo nativo para iOS por esto.
+    // En Android dejamos el flujo existente porque ahí sí funciona bien.
+    if (Platform.isIOS) {
+      return _signInWithGoogleNative();
+    }
     return _signInWithOAuthProvider(
       OAuthProvider.google,
       'signInWithGoogle',
     );
+  }
+
+  Future<User?> _signInWithGoogleNative() async {
+    try {
+      final googleSignIn = GoogleSignIn.instance;
+
+      if (!_googleSignInInitialized) {
+        await googleSignIn.initialize(
+          serverClientId: _googleWebClientId,
+          clientId: _googleIosClientId,
+        );
+        _googleSignInInitialized = true;
+      }
+
+      final googleUser = await googleSignIn.authenticate();
+
+      const scopes = ['email', 'profile'];
+      final authorization = await googleUser.authorizationClient
+              .authorizationForScopes(scopes) ??
+          await googleUser.authorizationClient.authorizeScopes(scopes);
+
+      final idToken = googleUser.authentication.idToken;
+      if (idToken == null) {
+        throw Exception('No se obtuvo idToken de Google.');
+      }
+
+      final res = await client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: authorization.accessToken,
+      );
+
+      final user = res.user;
+      if (user != null) {
+        await _ensureUserProfile(
+          userId: user.id,
+          email: googleUser.email,
+          nombreUsuario: googleUser.displayName ?? '',
+        );
+      }
+
+      return user;
+    } catch (e) {
+      debugPrint('signInWithGoogle (native iOS) -> error: $e');
+      rethrow;
+    }
   }
 
   /// Sign in nativo con Apple usando idToken + nonce.
@@ -215,10 +304,64 @@ class AuthDataSource {
         nonce: rawNonce,
       );
 
-      return res.user;
+      final user = res.user;
+      if (user != null) {
+        final nombreApple = [credential.givenName, credential.familyName]
+            .where((s) => s != null && s.trim().isNotEmpty)
+            .join(' ')
+            .trim();
+        await _ensureUserProfile(
+          userId: user.id,
+          email: credential.email ?? user.email ?? '',
+          nombreUsuario: nombreApple,
+        );
+      }
+
+      return user;
     } catch (e) {
       debugPrint('signInWithApple -> error: $e');
       rethrow;
+    }
+  }
+
+  /// Crea el perfil en `usuario` automáticamente si todavía no existe,
+  /// usando lo que el proveedor (Apple/Google) ya nos entregó.
+  ///
+  /// Apple exige (Guideline 4 / HIG de Sign in with Apple) que la app NO le
+  /// vuelva a pedir al usuario datos que Authentication Services ya nos dio
+  /// (nombre, correo). Por eso el login social ya no muestra ningún
+  /// formulario bloqueante pidiendo nombre/apellido/correo: creamos el
+  /// perfil solos, con lo disponible, y si Apple no compartió el nombre
+  /// (pasa seguido a partir del segundo login) usamos un valor por defecto
+  /// que el usuario puede cambiar después desde su perfil.
+  Future<void> _ensureUserProfile({
+    required String userId,
+    required String email,
+    required String nombreUsuario,
+  }) async {
+    try {
+      final existing = await client
+          .from('usuario')
+          .select('id_usuario')
+          .eq('id_usuario', userId)
+          .maybeSingle();
+      if (existing != null) return;
+
+      final fallbackNombre = nombreUsuario.trim().isNotEmpty
+          ? nombreUsuario.trim()
+          : (email.contains('@') ? email.split('@').first : 'Usuario');
+
+      await client.from('usuario').insert({
+        'id_usuario': userId,
+        'nombre_usuario': fallbackNombre,
+        'email': email,
+        'es_creador': false,
+      });
+    } catch (e) {
+      // No bloqueamos el login si esto falla (ej. condición de carrera con
+      // otro insert, o el correo ya pertenece a otra cuenta): getCurrentUser()
+      // decide después si hay perfil disponible o no.
+      debugPrint('_ensureUserProfile -> error: $e');
     }
   }
 
@@ -272,6 +415,11 @@ class AuthDataSource {
       await client.auth.signInWithOAuth(
         provider,
         redirectTo: 'com.sincbo.sincboflutter://login-callback',
+        // inAppWebView abre el login dentro de la app (SFSafariViewController
+        // en iOS / Chrome Custom Tab en Android) en vez de mandar al usuario
+        // a la app de Safari. Apple lo exige explícitamente (Guideline 4):
+        // sacar al usuario al navegador externo cuenta como mala UX.
+        authScreenLaunchMode: LaunchMode.inAppWebView,
       );
 
       if (!started) {

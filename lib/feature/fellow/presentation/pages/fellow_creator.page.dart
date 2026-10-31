@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/core/providers/chat_repository_provider.dart';
 import 'package:sincboflutter/data/models/usuario_por_tipo_model.dart';
+import 'package:sincboflutter/data/utils/error_message.dart';
 import '../../../../core/providers/auth_notifier_provider.dart';
 import '../../../../core/widgets/search_bar.dart';
 import '../../../../core/providers/providers.dart';
@@ -170,16 +171,21 @@ class _FellowPageState extends ConsumerState<FellowCreatorPage> {
                               // Crear u obtener chat id y navegar a ChatPage
                               showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                               String? chatId;
+                              String? errorMessage;
                               try {
                                 final repo = ref.read(chatRepositoryProvider);
                                 chatId = await repo.createChatAndParticipants(c.idUsuario, c.idPlan, true);
                               } catch (e) {
+                                debugPrint('fellow_creator_page -> createChatAndParticipants error: $e');
+                                errorMessage = friendlyErrorMessage(e);
                                 chatId = null;
                               }
                               if (Navigator.of(context).canPop()) Navigator.of(context).pop();
                               if (!mounted) return;
                               if (chatId == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir el chat')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(errorMessage ?? 'No se pudo abrir el chat')),
+                                );
                                 return;
                               }
 

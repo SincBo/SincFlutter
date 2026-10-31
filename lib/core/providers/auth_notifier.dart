@@ -63,11 +63,29 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserEntity?>> {
 
   Future<void> signIn(String email, String password) async {
     state = const AsyncValue.loading();
-    await repository.signIn(email, password);
+    try {
+      await repository.signIn(email, password);
+      // No seteamos state = AsyncValue.data(user) aquí: el listener de
+      // onAuthStateChange en _init() ya reacciona al evento signedIn y
+      // carga el perfil completo. Si el login fue exitoso, ese listener
+      // actualiza el state; si signIn() no lanzó excepción pero por algo
+      // el evento no llega, al menos no dejamos el estado en loading.
+    } catch (e, st) {
+      // Antes, si signIn() fallaba (credenciales inválidas, etc.), el
+      // estado se quedaba en AsyncValue.loading() para siempre: la
+      // excepción se escapaba sin que nada la capturara, y la pantalla
+      // de login quedaba pegada en el spinner sin mostrar ningún error.
+      state = AsyncValue.error(e, st);
+    }
   }
 
   Future<void> signOut() async {
     await repository.signOut();
+    state = const AsyncValue.data(null);
+  }
+
+  Future<void> deleteAccount() async {
+    await repository.deleteAccount();
     state = const AsyncValue.data(null);
   }
 

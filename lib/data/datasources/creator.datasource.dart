@@ -41,61 +41,31 @@ class CreatorDataSource {
         int offset = 0,
       }) async {
     try {
-      if (query.trim().isEmpty) {
-        final res = await client
-            .from('creadores')
-            .select()
-            .limit(limit)
-            .range(offset, offset + limit - 1);
-
-        final list = List<dynamic>.from(res);
-
-        return list.map((e) {
-          final map = normalizeKeys(mapFromDynamic(e));
-          return CreatorModel.fromMap(map);
-        }).toList();
-      }
-
-      final pattern = '%$query%';
-
-      final res = await client
-          .from('creadores')
-          .select()
-          .or('nombre_usuario.ilike.$pattern,categoria.ilike.$pattern')
-          .limit(limit)
-          .range(offset, offset + limit - 1);
-
-      final list = List<dynamic>.from(res);
-
-      if (list.isNotEmpty) {
-        return list.map((e) {
-          final map = normalizeKeys(mapFromDynamic(e));
-          return CreatorModel.fromMap(map);
-        }).toList();
-      }
-
-      // fallback RPC
+      // No existe una tabla `creadores` (el nombre real es `creador`,
+      // singular); el listado público siempre pasa por el RPC
+      // `obtener_creadores`, que ya trae planes y publicaciones
+      // públicas armados. Filtramos y paginamos del lado del cliente.
       final rpcRes = await client.rpc('obtener_creadores');
+      if (rpcRes is! List) return [];
 
-      if (rpcRes is List) {
-        final filtered = rpcRes.where((e) {
-          final map = normalizeKeys(mapFromDynamic(e));
+      final all = rpcRes.map((e) => normalizeKeys(mapFromDynamic(e))).toList();
 
-          final nombre =
-          (map['nombre_usuario'] ?? '').toString().toLowerCase();
-          final categoria = (map['categoria'] ?? '').toString().toLowerCase();
+      final q = query.trim().toLowerCase();
+      final filtered = q.isEmpty
+          ? all
+          : all.where((map) {
+              final nombre =
+                  (map['nombre_usuario'] ?? '').toString().toLowerCase();
+              final categoria =
+                  (map['categoria'] ?? '').toString().toLowerCase();
+              return nombre.contains(q) || categoria.contains(q);
+            }).toList();
 
-          return nombre.contains(query.toLowerCase()) ||
-              categoria.contains(query.toLowerCase());
-        }).skip(offset).take(limit);
-
-        return filtered.map((e) {
-          final map = normalizeKeys(mapFromDynamic(e));
-          return CreatorModel.fromMap(map);
-        }).toList();
-      }
-
-      return [];
+      return filtered
+          .skip(offset)
+          .take(limit)
+          .map((map) => CreatorModel.fromMap(map))
+          .toList();
     } catch (e) {
       debugPrint('buscarCreadores -> error: $e');
       return [];
@@ -116,7 +86,6 @@ class CreatorDataSource {
 
       final res = await client.rpc('get_creadores_por_tipo', params: {
         'p_tipo': tipoPlan.trim(),
-        'p_user_id': user.id,
       });
 
       if (res is List) {

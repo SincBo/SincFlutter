@@ -1,22 +1,88 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sincboflutter/core/providers/payment_repository_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../domain/entities/creator.dart';
 import '../../../../core/providers/providers.dart';
+import '../../../../core/services/apple_iap_service.dart';
 import '../../../subscription/presentation/pages/payment_confirmation.page.dart';
 
-class CreatorWallPage extends StatefulWidget {
+// En iOS la suscripción se compra con Apple In-App Purchase (Guideline 3.1.1).
+// En Android el pago sigue siendo por QR de VPay.
+
+// Apple exige mostrar, junto a la compra de una suscripción, enlaces
+// funcionales a los Términos de uso (EULA) y a la Política de Privacidad.
+// Términos: se usa el EULA estándar de Apple (válido si no tienes uno propio).
+const String kTermsOfUseUrl =
+    'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+// Política de Privacidad (la misma URL registrada en App Store Connect).
+const String kPrivacyPolicyUrl = 'https://sinc.lat/legal/privacidad.html';
+
+class CreatorWallPage extends ConsumerStatefulWidget {
   final CreatorEntity creator;
 
   const CreatorWallPage({Key? key, required this.creator}) : super(key: key);
 
   @override
-  State<CreatorWallPage> createState() => _CreatorWallPageState();
+  ConsumerState<CreatorWallPage> createState() => _CreatorWallPageState();
 }
 
-class _CreatorWallPageState extends State<CreatorWallPage> {
+class _CreatorWallPageState extends ConsumerState<CreatorWallPage>
+    with WidgetsBindingObserver {
   bool? _optimisticSubscribed; // null = not decided yet, otherwise true/false
   static const double expandedHeight = 300;
+
+  StreamSubscription<IapEvent>? _iapSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    if (Platform.isIOS) {
+      // Resultado de las compras de Apple: mensaje al usuario y, si se
+      // activó la suscripción, refrescar el estado cacheado.
+      _iapSub = ref.read(appleIapServiceProvider).events.listen((event) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(event.message)));
+        if (event.success) _refreshSubscriptionState();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _iapSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _refreshSubscriptionState() {
+    ref.invalidate(isSubscribedProvider(widget.creator.idUsuario));
+    final planes = widget.creator.planes;
+    if (planes != null) {
+      for (final plan in planes) {
+        final planId = plan['id_plan'];
+        if (planId != null) {
+          ref.invalidate(isSubscribedToPlanProvider(planId as String));
+        }
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Al volver a la app, la suscripción pudo haberse activado mientras
+    // estaba en segundo plano (por ejemplo, tras pagar), así que refrescamos
+    // los providers en vez de dejarlos con el valor cacheado.
+    if (state == AppLifecycleState.resumed) {
+      _refreshSubscriptionState();
+    }
+  }
 
   void _toggleSubscribe() {
     setState(() {
@@ -171,14 +237,12 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
   Widget build(BuildContext context) {
     final creator = widget.creator;
 
-    // Use a Consumer here to obtain a WidgetRef safely and avoid relying on ConsumerState
-    return Consumer(builder: (context, localRef, child) {
-      // Watch the provider that checks subscription remotely
-      final susAsync = localRef.watch(isSubscribedProvider(creator.idUsuario));
-      final remoteSubscribed = susAsync.maybeWhen(data: (v) => v, orElse: () => false);
-      final effectiveSubscribed = _optimisticSubscribed ?? remoteSubscribed;
+    // Watch the provider that checks subscription remotely
+    final susAsync = ref.watch(isSubscribedProvider(creator.idUsuario));
+    final remoteSubscribed = susAsync.maybeWhen(data: (v) => v, orElse: () => false);
+    final effectiveSubscribed = _optimisticSubscribed ?? remoteSubscribed;
 
-      return Scaffold(
+    return Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
@@ -300,24 +364,30 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
                       if (creator.planes!.isNotEmpty)
                         _subscriptionRow(
                           context,
-                          ref: localRef,
+                          ref: ref,
                           title: 'Comunidad SINC',
                           price: '${creator.planes![0]['precio']}',
                           description:
                               'Añade el precio para ingresar a tu comunidad, en este nivel, tu comunidad recibirá mensajes, notas de voz, imágenes.',
                           planId: creator.planes![0]['id_plan'],
+                          appleProductId: creator.planes![0]['apple_product_id'] as String?,
                         ),
                       if (creator.planes!.length > 1) ...[
                         const SizedBox(height: 16),
                         _subscriptionRow(
                           context,
-                          ref: localRef,
+                          ref: ref,
                           title: 'Fellow',
                           price: '${creator.planes![1]['precio']}',
                           description:
                               'Esta es una sección más cercana a tu comunidad, con espacios limitados. Quienes están en este apartado pagarán un monto mayor.',
                           planId: creator.planes![1]['id_plan'],
+                          appleProductId: creator.planes![1]['apple_product_id'] as String?,
                         ),
+                      ],
+                      if (Platform.isIOS) ...[
+                        const SizedBox(height: 16),
+                        _iosSubscriptionFooter(),
                       ],
                     ],
 
@@ -369,12 +439,119 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
         //           label: const Text('Suscribirse'),
         //         ),
         // ),
+    );
+  }
+
+  /// Texto legal y "Restaurar compras" que Apple exige junto a suscripciones
+  /// (Guideline 3.1.2): renovación automática, cómo cancelar, y enlaces a
+  /// Términos de uso y Política de Privacidad.
+  Widget _iosSubscriptionFooter() {
+    const small = TextStyle(fontSize: 12, color: Colors.black54);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'La suscripción es mensual y se renueva automáticamente cada mes '
+          'hasta que la canceles. El pago se carga a tu cuenta de Apple ID al '
+          'confirmar la compra. Puedes gestionar o cancelar tu suscripción en '
+          'Ajustes > tu nombre > Suscripciones, al menos 24 horas antes de que '
+          'termine el periodo actual.',
+          style: small,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 16,
+          children: [
+            TextButton(
+              onPressed: () => ref.read(appleIapServiceProvider).restore(),
+              child: const Text('Restaurar compras'),
+            ),
+            TextButton(
+              onPressed: () => launchUrl(
+                Uri.parse(kTermsOfUseUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: const Text('Términos de uso'),
+            ),
+            if (kPrivacyPolicyUrl.isNotEmpty)
+              TextButton(
+                onPressed: () => launchUrl(
+                  Uri.parse(kPrivacyPolicyUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: const Text('Política de privacidad'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Botón de compra en iOS con Apple In-App Purchase.
+  Widget _iosPurchaseButton({
+    required String? appleProductId,
+    required bool yaSuscrito,
+  }) {
+    // Plan sin producto de Apple dado de alta todavía.
+    if (appleProductId == null || appleProductId.isEmpty) {
+      return const OutlinedButton(
+        onPressed: null,
+        child: Text('No disponible por ahora'),
       );
-    });
+    }
+
+    final productAsync = ref.watch(appleProductProvider(appleProductId));
+    return productAsync.when(
+      loading: () => const SizedBox(
+        height: 32,
+        width: 32,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (_, __) => const OutlinedButton(
+        onPressed: null,
+        child: Text('No disponible por ahora'),
+      ),
+      data: (product) {
+        // Apple aún no aprobó el producto, o la tienda no lo devuelve.
+        if (product == null) {
+          return const OutlinedButton(
+            onPressed: null,
+            child: Text('No disponible por ahora'),
+          );
+        }
+        return ElevatedButton(
+          onPressed: yaSuscrito
+              ? null
+              : () async {
+                  try {
+                    await ref.read(appleIapServiceProvider).buy(product);
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No se pudo iniciar la compra.')),
+                    );
+                  }
+                },
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          ),
+          child: Text(yaSuscrito ? 'Suscrito' : 'Suscribirse ${product.price}/mes'),
+        );
+      },
+    );
   }
 
   Widget _subscriptionRow(BuildContext context,
-      {required String title, required String price, required String description, required WidgetRef ref, required String planId}) {
+      {required String title,
+      required String price,
+      required String description,
+      required WidgetRef ref,
+      required String planId,
+      String? appleProductId}) {
+    final subscribedAsync = ref.watch(isSubscribedToPlanProvider(planId));
+    final yaSuscrito = subscribedAsync.maybeWhen(data: (v) => v, orElse: () => false);
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -417,60 +594,79 @@ class _CreatorWallPageState extends State<CreatorWallPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  price,
-                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    // Parse price as double (strip non-numeric)
-                    final amountNum = double.tryParse(price.toString().replaceAll(RegExp('[^0-9.]'), '')) ?? 0.0;
-                    if (amountNum <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Monto inválido')));
-                      return;
-                    }
-
-                    // 1) Crear transacción en backend
-                    final repo = ref.read(paymentRepositoryProvider);
-                    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-                    String? idTransaccion;
-                    try {
-                      idTransaccion = await repo.createTransaction(
-                        creatorId: widget.creator.idUsuario,
-                        planId: planId,
-                        price: amountNum,
-                      );
-                    } catch (e) {
-                      idTransaccion = null;
-                    }
-
-                    if (Navigator.of(context).canPop()) Navigator.of(context).pop(); // dismiss loading
-
-                    if (idTransaccion == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo crear la transacción')));
-                      return;
-                    }
-
-                    // 2) Navegar a la página de confirmación de pago con transactionId
-                    final amountLabel = price.contains('bs') ? price : '$price bs';
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PaymentConfirmationPage(
-                        recipient: widget.creator.nombreUsuario,
-                        amount: amountLabel,
-                        concept: title,
-                        destinationAccountId: widget.creator.idUsuario,
-                        additionalData: 'Transacción $idTransaccion',
-                          transactionId: idTransaccion
-                      ),
-                    ));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                // En iOS el cobro real es el de Apple (USD, en el botón), así
+                // que no mostramos el precio en Bs para no confundir.
+                if (!Platform.isIOS)
+                  Text(
+                    price,
+                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
                   ),
-                  child: const Text('Suscribirse'),
-                ),
+                if (yaSuscrito) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ya estás suscrito',
+                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                if (Platform.isIOS)
+                  // En iOS la suscripción se compra con Apple In-App Purchase
+                  // (Guideline 3.1.1). Sin enlaces a pagos externos.
+                  _iosPurchaseButton(
+                    appleProductId: appleProductId,
+                    yaSuscrito: yaSuscrito,
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: () async {
+                      // Parse price as double (strip non-numeric)
+                      final amountNum = double.tryParse(price.toString().replaceAll(RegExp('[^0-9.]'), '')) ?? 0.0;
+                      if (amountNum <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Monto inválido')));
+                        return;
+                      }
+
+                      // 1) Crear transacción en backend
+                      final repo = ref.read(paymentRepositoryProvider);
+                      showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                      String? idTransaccion;
+                      try {
+                        idTransaccion = await repo.createTransaction(
+                          creatorId: widget.creator.idUsuario,
+                          planId: planId,
+                        );
+                      } catch (e) {
+                        idTransaccion = null;
+                      }
+
+                      if (Navigator.of(context).canPop()) Navigator.of(context).pop(); // dismiss loading
+
+                      if (idTransaccion == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo crear la transacción')));
+                        return;
+                      }
+
+                      // 2) Navegar a la página de confirmación de pago con transactionId
+                      final amountLabel = price.contains('bs') ? price : '$price bs';
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => PaymentConfirmationPage(
+                          recipient: widget.creator.nombreUsuario,
+                          amount: amountLabel,
+                          concept: title,
+                          destinationAccountId: widget.creator.idUsuario,
+                          additionalData: 'Transacción $idTransaccion',
+                            transactionId: idTransaccion
+                        ),
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      backgroundColor: yaSuscrito ? Colors.grey.shade300 : null,
+                      foregroundColor: yaSuscrito ? Colors.black87 : null,
+                    ),
+                    child: Text(yaSuscrito ? 'Renovar' : 'Suscribirse'),
+                  ),
               ],
             ),
           ],

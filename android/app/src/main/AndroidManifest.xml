@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Permissions for image picking -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- Fallback for Android <= 12 -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- No declaramos READ_MEDIA_IMAGES ni READ_EXTERNAL_STORAGE: image_picker
+         (chat.page.dart) usa el selector de fotos del sistema (Photo Picker),
+         que no requiere ningún permiso porque el usuario elige la foto dentro
+         de un proceso separado del sistema operativo, no de la app. -->
 <!--    &lt;!&ndash; Optional: camera if you plan to capture photos &ndash;&gt;-->
 <!--    <uses-permission android:name="android.permission.CAMERA" />-->
 
@@ -12,7 +12,7 @@
 
 
     <application
-        android:label="sincboflutter"
+        android:label="SincBo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

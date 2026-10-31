@@ -6,6 +6,46 @@ import '../../../../core/providers/providers.dart';
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({Key? key}) : super(key: key);
 
+  Future<void> _confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar cuenta'),
+        content: const Text(
+          'Esta acción es permanente. Se borrará tu cuenta y todos tus datos '
+          '(perfil, mensajes, suscripciones). No se puede deshacer.\n\n'
+          '¿Deseas continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref.read(authNotifierProvider.notifier).deleteAccount();
+      if (context.mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo eliminar la cuenta: $e')),
+        );
+      }
+    }
+  }
+
   void _showChangePasswordSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
@@ -94,8 +134,6 @@ class ProfilePage extends ConsumerWidget {
                           Text('Información', style: theme.textTheme.titleMedium),
                           const SizedBox(height: 12),
                           _InfoRow(label: 'Rol', value: esCreador ? 'Creador' : 'Usuario'),
-                          // _InfoRow(label: 'ID', value: user.id),
-                          // Phone field removed: not present in UserEntity
                         ],
                       ),
                     ),
@@ -121,6 +159,18 @@ class ProfilePage extends ConsumerWidget {
                     },
                     icon: const Icon(Icons.logout),
                     label: const Text('Cerrar sesión'),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  OutlinedButton.icon(
+                    onPressed: () => _confirmDeleteAccount(context, ref),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    icon: const Icon(Icons.delete_forever),
+                    label: const Text('Eliminar cuenta'),
                   ),
                 ],
               ),
@@ -215,7 +265,6 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
     final newPassword = _newPasswordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    // Validaciones
     if (newPassword.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa la nueva contraseña')),
@@ -271,7 +320,6 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Handle indicator
           Center(
             child: Container(
               width: 40,
@@ -283,24 +331,18 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Title
           Text(
             'Cambiar Contraseña',
             style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-
-          // Subtitle
           Text(
             'Ingresa tu nueva contraseña',
             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-
-          // New password field
           TextField(
             controller: _newPasswordController,
             obscureText: _obscureNewPassword,
@@ -316,8 +358,6 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Confirm password field
           TextField(
             controller: _confirmPasswordController,
             obscureText: _obscureConfirmPassword,
@@ -332,8 +372,6 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // Submit button
           ElevatedButton(
             onPressed: _isSubmitting ? null : _onSubmit,
             style: ElevatedButton.styleFrom(
@@ -348,8 +386,6 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
                 : const Text('Actualizar Contraseña'),
           ),
           const SizedBox(height: 12),
-
-          // Cancel button
           TextButton(
             onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
             child: const Text('Cancelar'),
@@ -360,4 +396,3 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
     );
   }
 }
-

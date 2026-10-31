@@ -442,7 +442,6 @@ class SupabaseDataSource {
       // Call the RPC. We don't expect a particular return value; success is indicated by no exception.
       await client.rpc('enviar_mensaje', params: {
         'id_chat_param': idChat,
-        'id_remitente_param': user.id,
         'contenido_param': contenido,
       });
 
@@ -513,9 +512,7 @@ class SupabaseDataSource {
         return [];
       }
 
-      final res = await client.rpc('obtener_chats_suscritos', params: {
-        'id_usuario_input': user.id,
-      });
+      final res = await client.rpc('obtener_chats_suscritos');
 
       if (res == null) return [];
 
@@ -918,7 +915,6 @@ class SupabaseDataSource {
       // });
       final rpcRes = await client.rpc('get_creadores_por_tipo', params: {
         'p_tipo': tipo,
-        'p_user_id': user.id,
       });
 
       if (rpcRes == null) return [];
@@ -1117,7 +1113,6 @@ class SupabaseDataSource {
   }) async {
     try {
       final res = await client.rpc('get_ganancias_creador_mes_v1', params: {
-        'p_id_creador': creadorId,
         'p_year': year,
         'p_month': month,
       });
@@ -1166,7 +1161,6 @@ class SupabaseDataSource {
   }) async {
     try {
       final res = await client.rpc('get_ganancias_creador_mes_v1', params: {
-        'p_id_creador': creadorId,
         'p_year': year,
         'p_month': month,
       });
@@ -1200,7 +1194,6 @@ class SupabaseDataSource {
   }) async {
     try {
       final res = await client.rpc('get_top_pagos_creador_mes_v1', params: {
-        'p_id_creador': creadorId,
         'p_year': year,
         'p_month': month,
         'p_limit': limit,

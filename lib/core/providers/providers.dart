@@ -47,6 +47,20 @@ final isSubscribedProvider =
 });
 
 /// ----------------------
+/// IS SUBSCRIBED TO PLAN PROVIDER (por plan, no solo por creador)
+/// ----------------------
+final isSubscribedToPlanProvider =
+    FutureProvider.family<bool, String>((ref, idPlan) async {
+  final repo = ref.read(paymentRepositoryProvider);
+  try {
+    return await repo.isSubscribedToPlan(idPlan);
+  } catch (e) {
+    debugPrint('isSubscribedToPlanProvider -> error: $e');
+    return false;
+  }
+});
+
+/// ----------------------
 /// MESSAGES PROVIDER
 /// ----------------------
 final messagesProvider =

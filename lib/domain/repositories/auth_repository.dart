@@ -15,6 +15,9 @@ abstract class AuthRepository {
   /// Sign out current user.
   Future<void> signOut();
 
+  /// Borra permanentemente la cuenta del usuario actual y todos sus datos.
+  Future<void> deleteAccount();
+
   /// Change password for current user.
   Future<void> changePassword({required String newPassword});
 
@@ -42,5 +45,6 @@ abstract class AuthRepository {
   /// Returns basic auth info (email, displayName) from the active session.
   /// Useful for pre-filling sign-up forms after OAuth. Returns null if no session.
   Future<({String? email, String? displayName})?> getAuthUserInfo();
+
 }
 

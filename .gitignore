@@ -46,3 +46,7 @@ app.*.map.json
 /android/app/release
 
 .env
+
+# Llave de firma Android (no subir al repo)
+upload-keystore.jks
+*.jks

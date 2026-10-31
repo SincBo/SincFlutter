@@ -6,22 +6,65 @@ import '../../../../data/models/ganancias_mes_model.dart';
 import '../../../../data/models/top_pago_mes_model.dart';
 import '../../../profile/presentation/pages/profile.page.dart';
 
-class GananciasPage extends ConsumerWidget {
+class GananciasPage extends ConsumerStatefulWidget {
   final String? creadorId;
   final int? year;
   final int? month;
   const GananciasPage({Key? key, this.creadorId, this.year, this.month}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GananciasPage> createState() => _GananciasPageState();
+}
+
+class _GananciasPageState extends ConsumerState<GananciasPage> {
+  late int _year;
+  late int _month;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _year = widget.year ?? now.year;
+    _month = widget.month ?? now.month;
+  }
+
+  bool get _isCurrentOrFutureMonth {
+    final now = DateTime.now();
+    return _year > now.year || (_year == now.year && _month >= now.month);
+  }
+
+  void _goToPreviousMonth() {
+    setState(() {
+      if (_month == 1) {
+        _month = 12;
+        _year -= 1;
+      } else {
+        _month -= 1;
+      }
+    });
+  }
+
+  void _goToNextMonth() {
+    if (_isCurrentOrFutureMonth) return; // no mostrar meses futuros
+    setState(() {
+      if (_month == 12) {
+        _month = 1;
+        _year += 1;
+      } else {
+        _month += 1;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final now = DateTime.now();
-    final int resolvedYear = year ?? now.year;
-    final int resolvedMonth = month ?? now.month;
+    final resolvedYear = _year;
+    final resolvedMonth = _month;
 
     // Resolve creatorId: prefer provided, else try current auth user id
-    String? resolvedCreatorId = creadorId;
+    String? resolvedCreatorId = widget.creadorId;
     if (resolvedCreatorId == null || resolvedCreatorId.isEmpty) {
       final authUser = ref.read(authNotifierProvider).maybeWhen(data: (u) => u, orElse: () => null);
       resolvedCreatorId = authUser?.id;
@@ -40,10 +83,12 @@ class GananciasPage extends ConsumerWidget {
     ]);
 
     return FutureBuilder<List<List<dynamic>>>(
+      key: ValueKey('$resolvedYear-$resolvedMonth'),
       future: future,
       builder: (context, snap) {
-        // Defaults
-        String mesLabel = 'Total';
+        // Defaults (el mes/año siempre reflejan la navegación, aunque
+        // no haya datos para ese mes)
+        String mesLabel = '${_monthName(resolvedMonth)} $resolvedYear';
         double totalBruto = 0;
         double balanceTotal = 0;
         double feeMonto = 0;
@@ -61,7 +106,6 @@ class GananciasPage extends ConsumerWidget {
 
           if (gananciasList.isNotEmpty) {
             final g = gananciasList.first;
-            mesLabel = _monthName(g.mes);
             totalBruto = g.totalBruto;
             balanceTotal = g.balance;
             feeMonto = g.fee > 0 ? g.fee : totalBruto * foundersFeeRate;
@@ -171,8 +215,32 @@ class GananciasPage extends ConsumerWidget {
                             const Text('Neto (después de fee)', style: TextStyle(color: Colors.black54, fontSize: 11)),
                           ],
                         ),
-                        Positioned(left: 10, child: Icon(Icons.play_arrow, color: Colors.grey[400], size: 48)),
-                        Positioned(right: 10, child: Transform.rotate(angle: 3.1416, child: Icon(Icons.play_arrow, color: Colors.grey[400], size: 48))),
+                        // Flecha izquierda: mes anterior
+                        Positioned(
+                          left: 10,
+                          child: Transform.rotate(
+                            angle: 3.1416,
+                            child: IconButton(
+                              onPressed: _goToPreviousMonth,
+                              icon: Icon(Icons.play_arrow, color: theme.colorScheme.primary, size: 40),
+                              tooltip: 'Mes anterior',
+                            ),
+                          ),
+                        ),
+                        // Flecha derecha: mes siguiente (deshabilitada si ya
+                        // estamos en el mes actual, no se puede ver el futuro)
+                        Positioned(
+                          right: 10,
+                          child: IconButton(
+                            onPressed: _isCurrentOrFutureMonth ? null : _goToNextMonth,
+                            icon: Icon(
+                              Icons.play_arrow,
+                              color: _isCurrentOrFutureMonth ? Colors.grey[300] : theme.colorScheme.primary,
+                              size: 40,
+                            ),
+                            tooltip: 'Mes siguiente',
+                          ),
+                        ),
                       ],
                     ),
                   ),

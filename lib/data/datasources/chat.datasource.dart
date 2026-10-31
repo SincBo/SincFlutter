@@ -19,10 +19,7 @@ class ChatDataSource {
       final user = client.auth.currentUser;
       if (user == null) return [];
 
-      final res = await client.rpc(
-        'obtener_chats_suscritos',
-        params: {'id_usuario_input': user.id},
-      );
+      final res = await client.rpc('obtener_chats_suscritos');
 
       if (res == null) return [];
 
@@ -160,7 +157,6 @@ class ChatDataSource {
 
       await client.rpc('enviar_mensaje', params: {
         'id_chat_param': idChat,
-        'id_remitente_param': user.id,
         'contenido_param': contenido,
       });
 
@@ -236,6 +232,8 @@ class ChatDataSource {
         'p_id_plan': idPlan,
       });
 
+      debugPrint('crearChatYParticipantes -> rpcRes (${rpcRes.runtimeType}): $rpcRes');
+
       if (rpcRes == null) return null;
 
       // Typical case: RPC returns a scalar string id
@@ -264,7 +262,11 @@ class ChatDataSource {
       if (rpcRes is num) return rpcRes.toString();
       return null;
     } catch (e) {
-      return null;
+      debugPrint('crearChatYParticipantes -> error: $e');
+      // Antes esto devolvía null y se perdía el motivo real (por ejemplo
+      // "No hay una suscripción activa a este plan"). Lo relanzamos para
+      // que la UI pueda mostrar el mensaje real en vez de uno genérico.
+      rethrow;
     }
   }
 }

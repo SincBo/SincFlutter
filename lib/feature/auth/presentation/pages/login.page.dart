@@ -7,7 +7,6 @@ import 'package:sincboflutter/core/providers/auth_repository_provider.dart';
 
 import '../../../../core/providers/auth_notifier_provider.dart';
 import '../../../../domain/entities/user.dart';
-import '../../../home/presentation/pages/home.page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -619,13 +618,33 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
           final userModel = await ds.getCurrentUser();
           if (userModel != null) {
             ref.read(authNotifierProvider.notifier).setUser(userModel);
-          }
 
-          if (mounted) {
-            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const HomePage()),
-              (route) => false,
-            );
+            // No navegamos manualmente a HomePage: AuthGate ya está
+            // observando authNotifierProvider y cambia solo a HomePage en
+            // cuanto setUser(...) actualiza el estado. Si en vez de esto
+            // reemplazábamos toda la pila con un HomePage() suelto, AuthGate
+            // quedaba fuera de la pila de navegación — y entonces cerrar
+            // sesión o eliminar la cuenta después ya no tenía nada que
+            // redirigiera a Login (HomePage solo se ponía en blanco).
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+          } else {
+            // El insert falló (por ejemplo, el correo ya está tomado por
+            // otra cuenta) y por eso tampoco hay perfil que cargar. Antes
+            // esto se quedaba en silencio y parecía que "Continuar" no
+            // hacía nada — ahora avisamos con un mensaje claro.
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'No se pudo completar el registro. Es posible que ya '
+                    'exista una cuenta con este correo — intenta iniciar '
+                    'sesión en su lugar, o contacta a soporte.',
+                  ),
+                ),
+              );
+            }
           }
         }
       } else {
@@ -695,26 +714,38 @@ class _SignUpSheetState extends ConsumerState<SignUpSheet> {
                   TextField(
                     controller: _nombreController,
                     decoration: const InputDecoration(labelText: 'Nombre'),
-                    enabled: !widget.isOAuthSignup || widget.prefilledNombre == null,
+                    // Apple/Google casi nunca comparten el nombre completo
+                    // (Apple solo la primerísima vez, y a veces ni eso), así
+                    // que el valor "prefilled" suele llegar como '' y no
+                    // como null. Si tratamos '' como "ya tiene un valor" el
+                    // campo queda bloqueado y vacío a la vez. Por eso
+                    // comprobamos también isEmpty, no solo == null.
+                    enabled: !widget.isOAuthSignup ||
+                        widget.prefilledNombre == null ||
+                        widget.prefilledNombre!.isEmpty,
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _apellidoController,
                     decoration: const InputDecoration(labelText: 'Apellido'),
-                    enabled: !widget.isOAuthSignup || widget.prefilledApellido == null,
+                    enabled: !widget.isOAuthSignup ||
+                        widget.prefilledApellido == null ||
+                        widget.prefilledApellido!.isEmpty,
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(labelText: 'Correo'),
-                    enabled: !widget.isOAuthSignup || widget.prefilledEmail == null,
+                    enabled: !widget.isOAuthSignup ||
+                        widget.prefilledEmail == null ||
+                        widget.prefilledEmail!.isEmpty,
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _telefonoController,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: 'Telefono'),
+                    decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
                   ),
                   // Solo mostrar contraseña si NO es OAuth signup
                   if (!widget.isOAuthSignup) ...[

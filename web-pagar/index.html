@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sinc — Suscríbete</title>
+<style>
+  :root {
+    --sinc-primary: #04CFB8;
+    --sinc-primary-dark: #03a996;
+    --sinc-bg: #F7F8FA;
+    --sinc-text: #16181C;
+    --sinc-muted: #6B7280;
+    --sinc-danger: #DC2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--sinc-bg);
+    color: var(--sinc-text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 64px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .brand .dot {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--sinc-primary);
+    color: #fff; font-weight: 700; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand span { font-weight: 700; font-size: 20px; }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);
+    padding: 28px 24px;
+  }
+
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p.subtitle { color: var(--sinc-muted); font-size: 14px; margin: 0 0 20px; }
+
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  input[type="email"], input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #E2E4E9;
+    font-size: 15px;
+    outline: none;
+  }
+  input:focus { border-color: var(--sinc-primary); }
+
+  button {
+    width: 100%;
+    padding: 13px 16px;
+    border-radius: 24px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 18px;
+  }
+  button.primary { background: var(--sinc-primary); color: #fff; }
+  button.primary:hover { background: var(--sinc-primary-dark); }
+  button.primary:disabled { opacity: 0.6; cursor: default; }
+  button.link {
+    background: transparent;
+    color: var(--sinc-primary);
+    font-weight: 600;
+    margin-top: 10px;
+    padding: 6px;
+  }
+
+  .error {
+    background: #FEF2F2; color: var(--sinc-danger);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+    margin-top: 14px;
+  }
+  .hint { font-size: 12px; color: var(--sinc-muted); margin-top: 8px; }
+
+  .plan {
+    border: 1px solid #E2E4E9;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .plan .info { flex: 1; }
+  .plan .info .name { font-weight: 700; font-size: 15px; }
+  .plan .info .desc { font-size: 13px; color: var(--sinc-muted); margin-top: 2px; }
+  .plan .price { font-weight: 700; white-space: nowrap; }
+  .plan button {
+    width: auto;
+    margin-top: 0;
+    padding: 9px 16px;
+    font-size: 13px;
+  }
+
+  .qr-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+  }
+  .qr-wrap img { width: 220px; height: 220px; object-fit: contain; border-radius: 8px; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--sinc-muted);
+    margin-top: 14px;
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid #E2E4E9;
+    border-top-color: var(--sinc-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .success {
+    text-align: center;
+  }
+  .success .check {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--sinc-primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; margin: 0 auto 14px;
+  }
+
+  .muted-link { font-size: 13px; color: var(--sinc-muted); text-align: center; margin-top: 18px; }
+  .muted-link a { color: var(--sinc-primary); text-decoration: none; font-weight: 600; }
+
+  .back-btn {
+    background: none; border: none; color: var(--sinc-muted);
+    font-size: 13px; padding: 0; margin: 0 0 14px; width: auto;
+    cursor: pointer; text-align: left;
+  }
+</style>
+</head>
+<body>
+
+<div class="brand"><div class="dot">S</div><span>Sinc</span></div>
+
+<div class="card" id="app">
+  <p class="subtitle">Cargando…</p>
+</div>
+
+<!-- Configura aquí tu proyecto de Supabase (la anon key es pública, segura de exponer) -->
+<script>
+  const SUPABASE_URL = 'https://hsbgqbyumyvcxczwuvqv.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYmdxYnl1bXl2Y3hjend1dnF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkwODE2OTcsImV4cCI6MjA2NDY1NzY5N30.aZJVU1x76CTI7wYhYBZ5WDYH_PAUibE_iG2zxZQTzK8';
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+  const { createClient } = supabase;
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const app = document.getElementById('app');
+  const params = new URLSearchParams(window.location.search);
+  const creadorId = params.get('creador');
+  const preselectPlanId = params.get('plan');
+
+  let state = {
+    view: 'loading', // loading | login | signup | plans | pay | error
+    error: null,
+    creator: null,
+    selectedPlan: null,
+    txId: null,
+    qrImageUrl: null,
+    pollTimer: null,
+  };
+
+  function render() {
+    if (state.view === 'loading') return renderLoading();
+    if (state.view === 'login') return renderLogin();
+    if (state.view === 'signup') return renderSignup();
+    if (state.view === 'no-creator') return renderNoCreator();
+    if (state.view === 'plans') return renderPlans();
+    if (state.view === 'pay') return renderPay();
+    if (state.view === 'success') return renderSuccess();
+  }
+
+  function renderLoading() {
+    app.innerHTML = `<p class="subtitle">Cargando…</p>`;
+  }
+
+  function renderNoCreator() {
+    app.innerHTML = `
+      <h1>Falta el creador</h1>
+      <p class="subtitle">Este enlace no incluye a qué creador te vas a suscribir. Vuelve a abrirlo desde la app de Sinc.</p>
+    `;
+  }
+
+  function renderLogin() {
+    app.innerHTML = `
+      <h1>Inicia sesión</h1>
+      <p class="subtitle">Usa el mismo correo y contraseña de tu cuenta de Sinc.</p>
+      <form id="login-form">
+        <label>Correo</label>
+        <input type="email" id="login-email" required autocomplete="email" />
+        <label>Contraseña</label>
+        <input type="password" id="login-password" required autocomplete="current-password" />
+        <div id="login-error"></div>
+        <button class="primary" type="submit" id="login-btn">Ingresar</button>
+      </form>
+      <button class="link" id="go-signup">¿No tienes cuenta? Créala aquí</button>
+      <p class="hint">Necesitas la app de Sinc instalada para ver el contenido de tu suscripción una vez que pagues.</p>
+    `;
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true; btn.textContent = 'Ingresando…';
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      btn.disabled = false; btn.textContent = 'Ingresar';
+      if (error) {
+        document.getElementById('login-error').innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+        return;
+      }
+      await afterAuth();
+    });
+    document.getElementById('go-signup').addEventListener('click', () => {
+      state.view = 'signup';
+      render();
+    });
+  }
+
+  function renderSignup() {
+    app.innerHTML = `
+      <button class="back-btn" id="back-to-login">&larr; Volver a iniciar sesión</button>
+      <h1>Crea tu cuenta</h1>
+      <p class="subtitle">Con esta cuenta podrás ver el contenido en la app de Sinc.</p>
+      <form id="signup-form">
+        <label>Nombre de usuario</label>
+        <input type="text" id="signup-name" required />
+        <label>Correo</label>
+        <input type="email" id="signup-email" required autocomplete="email" />
+        <label>Contraseña</label>
+        <input type="password" id="signup-password" required minlength="6" autocomplete="new-password" />
+        <div id="signup-error"></div>
+        <button class="primary" type="submit" id="signup-btn">Crear cuenta</button>
+      </form>
+    `;
+    document.getElementById('back-to-login').addEventListener('click', () => {
+      state.view = 'login';
+      render();
+    });
+    document.getElementById('signup-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nombre_usuario = document.getElementById('signup-name').value.trim();
+      const email = document.getElementById('signup-email').value.trim();
+      const password = document.getElementById('signup-password').value;
+      const btn = document.getElementById('signup-btn');
+      btn.disabled = true; btn.textContent = 'Creando…';
+      const { data, error } = await sb.auth.signUp({
+        email, password,
+        options: { data: { nombre_usuario, es_creador: false } },
+      });
+      if (error) {
+        btn.disabled = false; btn.textContent = 'Crear cuenta';
+        document.getElementById('signup-error').innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+        return;
+      }
+      const user = data.user;
+      if (user) {
+        await sb.from('usuario').insert({
+          id_usuario: user.id,
+          nombre_usuario,
+          email,
+          es_creador: false,
+        });
+      }
+      btn.disabled = false; btn.textContent = 'Crear cuenta';
+      await afterAuth();
+    });
+  }
+
+  async function afterAuth() {
+    if (!creadorId) {
+      state.view = 'no-creator';
+      return render();
+    }
+    state.view = 'loading';
+    render();
+    try {
+      const { data, error } = await sb.rpc('obtener_creadores');
+      if (error) throw error;
+      const creator = (data || []).find((c) => c.id_usuario === creadorId);
+      if (!creator) {
+        state.view = 'error';
+        state.error = 'No encontramos este creador.';
+        return render();
+      }
+      state.creator = creator;
+      state.view = 'plans';
+      render();
+    } catch (e) {
+      state.view = 'error';
+      state.error = e.message || String(e);
+      render();
+    }
+  }
+
+  function renderPlans() {
+    const creator = state.creator;
+    const planes = creator.planes || [];
+    app.innerHTML = `
+      <h1>${escapeHtml(creator.nombre_usuario)}</h1>
+      <p class="subtitle">${escapeHtml(creator.bio || 'Elige un plan para suscribirte.')}</p>
+      <div id="plans-list"></div>
+      <div id="plans-error"></div>
+    `;
+    const list = document.getElementById('plans-list');
+    if (!planes.length) {
+      list.innerHTML = `<p class="hint">Este creador todavía no tiene planes activos.</p>`;
+      return;
+    }
+    planes.forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'plan';
+      row.innerHTML = `
+        <div class="info">
+          <div class="name">${escapeHtml(p.nombre)}</div>
+          <div class="desc">${escapeHtml(p.descripcion || '')}</div>
+        </div>
+        <div class="price">Bs ${p.precio}</div>
+      `;
+      const btn = document.createElement('button');
+      btn.className = 'primary';
+      btn.textContent = 'Pagar';
+      btn.addEventListener('click', () => startPayment(p));
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+
+    if (preselectPlanId) {
+      const match = planes.find((p) => p.id_plan === preselectPlanId);
+      if (match) startPayment(match);
+    }
+  }
+
+  async function startPayment(plan) {
+    state.selectedPlan = plan;
+    state.view = 'pay';
+    state.qrImageUrl = null;
+    state.error = null;
+    render();
+
+    try {
+      // 1) crear transacción
+      const { data: txData, error: txError } = await sb.rpc('create_transaction', {
+        p_id_creador: state.creator.id_usuario,
+        p_id_plan: plan.id_plan,
+      });
+      if (txError) throw txError;
+      const txId = Array.isArray(txData)
+        ? (txData[0] && txData[0].id_transaccion)
+        : (txData && txData.id_transaccion);
+      if (!txId) throw new Error('No se pudo crear la transacción.');
+      state.txId = txId;
+
+      // 2) generar QR
+      const { data: qrData, error: qrError } = await sb.functions.invoke('vpay-generate-qr', {
+        body: { id_transaccion: txId },
+      });
+      if (qrError) throw qrError;
+
+      const imageUrl = extractQrImage(qrData);
+      if (!imageUrl) {
+        // puede que la respuesta sea un id numérico -> pedir la imagen con vpay-get-qr
+        const maybeId = extractQrId(qrData);
+        if (maybeId) {
+          const { data: qrData2, error: qrError2 } = await sb.functions.invoke('vpay-get-qr', {
+            body: { id: maybeId },
+          });
+          if (qrError2) throw qrError2;
+          const imageUrl2 = extractQrImage(qrData2);
+          if (imageUrl2) {
+            state.qrImageUrl = imageUrl2;
+            render();
+            startPolling(plan.id_plan);
+            return;
+          }
+        }
+        throw new Error('No se pudo generar el código QR.');
+      }
+
+      state.qrImageUrl = imageUrl;
+      render();
+      startPolling(plan.id_plan);
+    } catch (e) {
+      state.error = e.message || String(e);
+      render();
+    }
+  }
+
+  // Intenta extraer una imagen (base64 o URL) de la respuesta de vpay-generate-qr / vpay-get-qr.
+  // La respuesta puede venir en formas distintas según la pasarela VPay.
+  function extractQrImage(res) {
+    if (!res) return null;
+    if (typeof res === 'string') return toImageSrc(res);
+    if (res.qr && typeof res.qr === 'string') return toImageSrc(res.qr);
+    for (const key of ['qr_url', 'url', 'image', 'qr_image']) {
+      if (typeof res[key] === 'string' && res[key]) return toImageSrc(res[key]);
+    }
+    if (res.responseList && Array.isArray(res.responseList)) {
+      for (const rl of res.responseList) {
+        if (rl && Array.isArray(rl.response)) {
+          for (const r of rl.response) {
+            if (r && typeof r.identificator === 'string' && r.identificator.length > 100) {
+              return toImageSrc(r.identificator);
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function extractQrId(res) {
+    if (!res) return null;
+    if (res.responseList && Array.isArray(res.responseList)) {
+      for (const rl of res.responseList) {
+        if (rl && Array.isArray(rl.response)) {
+          for (const r of rl.response) {
+            if (r && r.code === 'QR' && r.identificator) return r.identificator;
+          }
+        }
+      }
+    }
+    if (typeof res.identificator === 'string') return res.identificator;
+    if (typeof res.id === 'string' || typeof res.id === 'number') return String(res.id);
+    return null;
+  }
+
+  function toImageSrc(value) {
+    const v = value.trim();
+    if (v.startsWith('http')) return v;
+    if (v.startsWith('data:image')) return v;
+    // asumir base64 crudo
+    return `data:image/png;base64,${v.replace(/\n/g, '')}`;
+  }
+
+  function startPolling(planId) {
+    clearInterval(state.pollTimer);
+    let attempts = 0;
+    state.pollTimer = setInterval(async () => {
+      attempts++;
+      if (attempts > 150) { // ~10 min a 4s
+        clearInterval(state.pollTimer);
+        return;
+      }
+      const { data } = await sb.rpc('esta_suscrito_a_plan', { p_id_plan: planId });
+      const suscrito = Array.isArray(data) ? data[0] : data;
+      if (suscrito === true) {
+        clearInterval(state.pollTimer);
+        state.view = 'success';
+        render();
+      }
+    }, 4000);
+  }
+
+  function renderPay() {
+    if (state.error) {
+      app.innerHTML = `
+        <button class="back-btn" id="back-to-plans">&larr; Volver a los planes</button>
+        <div class="error">${escapeHtml(state.error)}</div>
+      `;
+      document.getElementById('back-to-plans').addEventListener('click', () => {
+        state.view = 'plans'; state.error = null; render();
+      });
+      return;
+    }
+    app.innerHTML = `
+      <button class="back-btn" id="back-to-plans">&larr; Volver a los planes</button>
+      <h1>Escanea para pagar</h1>
+      <p class="subtitle">${escapeHtml(state.selectedPlan.nombre)} · Bs ${state.selectedPlan.precio}</p>
+      <div class="qr-wrap">
+        ${state.qrImageUrl
+          ? `<img src="${state.qrImageUrl}" alt="QR de pago" />`
+          : `<div class="spinner"></div>`}
+        <div class="status-badge"><span class="spinner"></span> Esperando confirmación del pago…</div>
+      </div>
+      <p class="hint">Escanea este QR con tu app bancaria. En cuanto se confirme el pago, verás la confirmación aquí automáticamente.</p>
+    `;
+    document.getElementById('back-to-plans').addEventListener('click', () => {
+      clearInterval(state.pollTimer);
+      state.view = 'plans'; render();
+    });
+  }
+
+  function renderSuccess() {
+    app.innerHTML = `
+      <div class="success">
+        <div class="check">✓</div>
+        <h1>¡Pago confirmado!</h1>
+        <p class="subtitle">Ya estás suscrito a ${escapeHtml(state.selectedPlan.nombre)}. Abre la app de Sinc para ver el contenido.</p>
+      </div>
+    `;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Init
+  (async function init() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      await afterAuth();
+    } else {
+      state.view = 'login';
+      render();
+    }
+  })();
+})();
+</script>
+
+</body>
+</html>

@@ -35,6 +35,10 @@ class CreatorModel extends CreatorEntity {
             'nombre': p['nombre'] ?? p['name'] ?? '',
             'descripcion': p['descripcion'] ?? p['description'] ?? '',
             'precio': (p['precio'] is num) ? (p['precio'] as num).toDouble() : (p['price'] is num ? (p['price'] as num).toDouble() : null),
+            // Producto de Apple In-App Purchase asociado a este plan (si ya
+            // fue dado de alta con la Edge Function create-iap-subscription).
+            'apple_product_id': p['apple_product_id'],
+            'apple_status': p['apple_status'],
           };
         }
         return p;

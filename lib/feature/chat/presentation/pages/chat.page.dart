@@ -108,6 +108,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _sendText(String text) async {
     final isCreator = _isCreator(ref);
+    final currentUserId = ref.read(authNotifierProvider).maybeWhen(
+        data: (u) => u?.id, orElse: () => null);
+    debugPrint(
+        '_sendText -> chatId=${widget.chatId} currentUserId=$currentUserId '
+        'isCreator=$isCreator isCommunityChat=$_isCommunityChat '
+        'creator.idUsuario=${widget.creator.idUsuario}');
 
     if (_isCommunityChat && !isCreator) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,7 +155,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _sendImage() async {
     final isCreator = _isCreator(ref);
 
-    if (_isCommunityChat && !isCreator) return;
+    // Solo el creador puede mandar imágenes, en cualquier tipo de chat.
+    if (!isCreator) return;
 
     if (widget.chatId == null) return;
 
@@ -215,6 +222,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _isCommunityChat,
       _isCreator(ref),
     );
+    final canAttachImage = controller.canSendImage(_isCreator(ref));
 
     return Scaffold(
       appBar: AppBar(
@@ -289,10 +297,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             SafeArea(
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: _sendingImage ? null : _sendImage,
-                    icon: const Icon(Icons.image),
-                  ),
+                  if (canAttachImage)
+                    IconButton(
+                      onPressed: _sendingImage ? null : _sendImage,
+                      icon: const Icon(Icons.image),
+                    ),
                   Expanded(
                     child: TextField(
                       controller: _controller,

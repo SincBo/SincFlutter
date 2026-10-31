@@ -50,4 +50,9 @@ class ChatController {
     if (!isCommunityChat) return true;
     return isCreator;
   }
+
+  /// Solo el creador puede mandar imágenes/media, en cualquier tipo de
+  /// chat (comunidad o fellow/DM). El backend (enviar_mensaje_con_imagenes)
+  /// ya lo exige del lado servidor; esto solo evita mostrar el botón.
+  bool canSendImage(bool isCreator) => isCreator;
 }
